@@ -24,7 +24,7 @@ be done by setting the param `niter_bjorck=0`.
 """
 
 import abc
-
+import warnings
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -46,6 +46,9 @@ from .normalizers import (
     reshaped_kernel_orthogonalization,
     DEFAULT_BETA_BJORCK,
 )
+from .normalizers import bjorck_normalization, spectral_normalization
+from .utils import padding_circular
+from .regularizers  import LorthRegularizer
 from tensorflow.keras.utils import register_keras_serializable
 
 
@@ -600,6 +603,195 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
             layer.bias.assign(self.bias)
         return layer
 
+
+
+@register_keras_serializable("deel-lip", "LorthRegulConv2D")
+class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
+    def __init__(
+        self,
+        filters,
+        kernel_size,
+        strides=(1, 1),
+        padding="circular",
+        data_format=None,
+        dilation_rate=(1, 1),
+        activation=None,
+        use_bias=True,
+        kernel_initializer='glorot_uniform',
+        bias_initializer="zeros",
+        kernel_regularizer=None,
+        bias_regularizer=None,
+        activity_regularizer=None,
+        kernel_constraint=None,
+        bias_constraint=None,
+        k_coef_lip=1.0,
+        lambdaLorth=10.0,
+        **kwargs
+    ):
+        """
+        This class is a Conv2D Layer regularized such that all singular of it's kernel
+        are 1. The computation is based on LorthRegularizer and requires a circular padding (added in the layer).
+        The computation is done in three steps:
+
+        1. apply a circular padding for ensuring 'same' configuration.
+        2. apply conv2D.
+        3. regularize kernel with Lorth Regul.
+
+        Args:
+            filters: Integer, the dimensionality of the output space
+                (i.e. the number of output filters in the convolution).
+            kernel_size: An integer or tuple/list of 2 integers, specifying the
+                height and width of the 2D convolution window.
+                Can be a single integer to specify the same value for
+                all spatial dimensions.
+            strides: An integer or tuple/list of 2 integers,
+                specifying the strides of the convolution along the height and width.
+                Can be a single integer to specify the same value for
+                all spatial dimensions.
+                Specifying any stride value != 1 is incompatible with specifying
+                any `dilation_rate` value != 1.
+            padding: `"circular"` ONLY (case-insensitive).
+            data_format: A string,
+                one of `channels_last` (default) or `channels_first`.
+                The ordering of the dimensions in the inputs.
+                `channels_last` corresponds to inputs with shape
+                `(batch, height, width, channels)` while `channels_first`
+                corresponds to inputs with shape
+                `(batch, channels, height, width)`.
+                It defaults to the `image_data_format` value found in your
+                Keras config file at `~/.keras/keras.json`.
+                If you never set it, then it will be "channels_last".
+            dilation_rate: an integer or tuple/list of 2 integers, specifying
+                the dilation rate to use for dilated convolution.
+                Can be a single integer to specify the same value for
+                all spatial dimensions.
+                Currently, specifying any `dilation_rate` value != 1 is
+                incompatible with specifying any stride value != 1.
+            activation: Activation function to use.
+                If you don't specify anything, no activation is applied
+                (ie. "linear" activation: `a(x) = x`).
+            use_bias: Boolean, whether the layer uses a bias vector.
+            kernel_initializer: Initializer for the `kernel` weights matrix.
+            bias_initializer: Initializer for the bias vector.
+            kernel_regularizer: Regularizer function applied to
+                the `kernel` weights matrix (should be None and will be set).
+            bias_regularizer: Regularizer function applied to the bias vector.
+            activity_regularizer: Regularizer function applied to
+                the output of the layer (its "activation")..
+            kernel_constraint: Constraint function applied to the kernel matrix.
+            bias_constraint: Constraint function applied to the bias vector.
+            k_coef_lip: lipschitz constant to ensure.
+
+        This documentation reuse the body of the original keras.layers.Conv2D doc.
+        """
+        if padding != "circular":
+            raise RuntimeError("LorthRegulConv2D only support padding='circular' implemented in the layer")
+        self.padding_size = [s//2 for s in kernel_size]
+        self.actual_padding = padding  ## since self.padding is updated by super class
+
+        self.lambdaLorth=lambdaLorth
+        if lambdaLorth<0:
+            raise RuntimeError("LorthRegulConv2D requires a  positive regularization factor lambdaLorth")
+        if lambdaLorth==0:
+            warnings.warn("LorthRegularizer: No regularization with lambdaLorth==0")
+
+        internal_padding = "valid"
+        if kernel_regularizer is not None:
+            raise RuntimeError("LorthRegulConv2D define the kernel_regularizer (should be None)")
+        regulLipConv = None
+        if lambdaLorth>0:
+            regulLipConv = LorthRegularizer(kernel_shape=None,stride=strides[0],lambdaLorth=lambdaLorth,flag_deconv=False)
+        super(LorthRegulConv2D, self).__init__(
+            filters=filters,
+            kernel_size=kernel_size,
+            strides=strides,
+            padding=internal_padding,  ## internal value
+            data_format=data_format,
+            dilation_rate=dilation_rate,
+            activation=activation,
+            use_bias=use_bias,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer,
+            kernel_regularizer=regulLipConv, ## internal value
+            bias_regularizer=bias_regularizer,
+            activity_regularizer=activity_regularizer,
+            kernel_constraint=kernel_constraint,
+            bias_constraint=bias_constraint,
+            **kwargs
+        )
+        self._kwargs = kwargs
+        self.set_klip_factor(k_coef_lip)
+
+    def compute_padded_shape(self,input_shape):
+        if isinstance(input_shape, tf.TensorShape):
+            internal_input_shape = input_shape.as_list()
+        else:
+            internal_input_shape = list(input_shape)
+
+        if self.data_format == 'channels_last':
+            first_layer = 1
+        else:
+            first_layer = 2
+        for index,pad in enumerate(self.padding_size):
+            internal_input_shape[index+first_layer] += 2*pad
+        internal_input_shape= tf.TensorShape(internal_input_shape)
+        print(internal_input_shape)
+        return internal_input_shape
+
+    def build(self, input_shape):
+        internal_input_shape = self.compute_padded_shape(input_shape)
+        super(LorthRegulConv2D, self).build(internal_input_shape)
+        self._init_lip_coef(input_shape)
+        if self.kernel_regularizer is not None:
+            self.kernel_regularizer.set_kernel_shape(self.kernel.shape)
+        self.built = True
+
+    def compute_output_shape(self, input_shape):
+        internal_input_shape = self.compute_padded_shape(input_shape)
+        return super(LorthRegulConv2D, self).compute_output_shape(internal_input_shape)
+
+    def _compute_lip_coef(self, input_shape=None):
+        return 1.0  # this layer don't require a corrective factor
+
+    def call(self, x, training=None):
+        x = padding_circular(x, self.padding_size)
+        outputs = super(LorthRegulConv2D, self).call(x)
+        return outputs
+
+    def get_config(self):
+        config = {
+            "k_coef_lip": self.k_coef_lip,
+            "lambdaLorth": self.lambdaLorth,
+            "padding": self.actual_padding,   ## overwrite the internal padding
+            "kernel_regularizer": None,        ## overwritte the kernel regul to None
+        }
+        base_config = super(LorthRegulConv2D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def condense(self):
+        return
+
+    def vanilla_export(self):
+        self._kwargs["name"] = self.name
+        layer = LorthRegulConv2D(
+            filters=self.filters,
+            kernel_size=self.kernel_size,
+            strides=self.strides,
+            padding="circular",
+            data_format=self.data_format,
+            dilation_rate=self.dilation_rate,
+            activation=self.activation,
+            use_bias=self.use_bias,
+            kernel_initializer="glorot_uniform",
+            bias_initializer="zeros",
+            lambdaLorth=0.0,  ## No regularization after export
+            **self._kwargs
+        )
+        layer.build(self.input_shape)
+        layer.kernel.assign(self.kernel.numpy() * self._get_coef())
+        if self.use_bias:
+            layer.bias.assign(self.bias.numpy())
+        return layer
 
 @register_keras_serializable("deel-lip", "FrobeniusDense")
 class FrobeniusDense(Dense, LipschitzLayer, Condensable):

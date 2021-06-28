@@ -7,6 +7,7 @@ Contains utility functions.
 """
 from typing import Generator, Tuple, Any
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras import backend as K
 
@@ -70,3 +71,14 @@ def evaluate_lip_const(model: Model, x, eps=1e-4, seed=None):
     lip_cst = K.max(ndfx / ndx)
     print("lip cst: %.3f" % lip_cst)
     return lip_cst
+
+
+def padding_circular(x,cPad):
+    if cPad is None:
+        return x
+    w_pad,h_pad = cPad
+    if w_pad>0:
+        x=tf.concat((x[:,-w_pad:,:,:],x,x[:,:w_pad,:,:]),axis=1)
+    if h_pad>0:
+        x=tf.concat((x[:,:,-h_pad:,:],x,x[:,:,:h_pad,:]),axis=2)
+    return x
