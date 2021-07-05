@@ -10,8 +10,8 @@ import unittest
 import numpy as np
 import tensorflow as tf
 '''physical_devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True)'''
-
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+'''
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import backend as K, Input, Model, metrics, callbacks
 
@@ -251,7 +251,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
         for test_params in tests_bank:
             pp.pprint(test_params)
             self.train_compute_and_verifySV(**test_params)
-
+    
     def test_spectral_dense(self):
         self._apply_tests_bank(
             [
@@ -329,8 +329,9 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
+    
 
-        '''dict(
+    '''dict(
                     layer_type=Dense,
                     layer_params={"units": 4, "kernel_regularizer": OrthDenseRegularizer(1000.0)},
                     batch_size=1000,
@@ -411,7 +412,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-
+    
     
     def test_lorthregulconv2d(self):
         # tests only checks that lip cons is enforced
@@ -741,5 +742,15 @@ class LipschitzLayersSVTest(unittest.TestCase):
         '''
 
 
+'''import tensorflow as tf
+from  deel.lip.computeLayerSV import  generate_graph_layers
+
+model = tf.keras.applications.ResNet50()
+model.summary()
+list_SV = computeModelUpperLip(model)
+print(list_SV)
+generate_graph_layers(model,layerName=model.layers[0].name)'''
+    
 if __name__ == "__main__":
+    
     unittest.main()

@@ -212,6 +212,7 @@ def train_k_lip_model(
         k_lip_data=k_lip_data,
         k_lip_model=k_lip_model,
     )
+    #callback_list = [hp.KerasCallback(logdir, hparams)]
     callback_list = [callbacks.TensorBoard(logdir), hp.KerasCallback(logdir, hparams)]
     if kwargs["callbacks"] is not None:
         callback_list = callback_list + kwargs["callbacks"]
@@ -650,7 +651,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-
+    
     def test_lorthregulconv2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
@@ -693,7 +694,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-
+    
     def test_scaledaveragepooling2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
@@ -1051,7 +1052,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-
+    
 
 if __name__ == "__main__":
     unittest.main()

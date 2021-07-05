@@ -1,9 +1,11 @@
 
+from deel.lip.activations import GroupSort
 import numpy as np
 import tensorflow as tf
 from .utils import _deel_export, padding_circular
 from .layers import LipschitzLayer, Condensable
 import deel.lip
+from .normalizers import _power_iteration_conv
 
 from tensorflow.keras.layers import (
     Layer,
@@ -48,32 +50,6 @@ def transposeKernel(w, transpose=False):
     return wAdj
 
 def compute_layer_vs_2D(w,Ks,N,nbIter):    
-    def model_iter_conf(w,input_shape,conv_first = True, cPad=None):
-        def f(u, bigConstant=-1):
-            u=u/tf.norm(u)
-            if cPad is None:
-                padType = 'SAME'
-            else:
-                padType='VALID'
-
-            if conv_first:
-                u_pad=padding_circular(u,cPad)
-                v= tf.nn.conv2d(u_pad,w,padding=padType,strides=(1,Ks,Ks,1))
-                v1 = zero_upscale2D(v,(Ks,Ks))
-                v1=padding_circular(v1,cPad)
-                wAdj=transposeKernel(w,True)
-                unew=tf.nn.conv2d(v1,wAdj,padding=padType,strides=1)
-            else:
-                u1 = zero_upscale2D(u,(Ks,Ks))
-                u_pad=padding_circular(u1,cPad)
-                wAdj=transposeKernel(w,True)
-                v=tf.nn.conv2d(u_pad,wAdj,padding=padType,strides=1)
-                v1=padding_circular(v,cPad)
-                unew= tf.nn.conv2d(v1,w,padding=padType,strides=(1,Ks,Ks,1))
-            if bigConstant> 0:
-                unew = bigConstant*u-unew
-            return unew,v
-        return f
     (R0,R,d,D) = w.shape
     KN = int(Ks*N)
     batch_size = 1
@@ -83,34 +59,29 @@ def compute_layer_vs_2D(w,Ks,N,nbIter):
     
     if Ks*Ks*d > D:
         input_shape=(N,N,D)
-        iter_f=model_iter_conf(w,(batch_size,)+input_shape,conv_first = False,cPad=cPad)
-        premier = 1
-        second = 0
+        conv_first = False
     else:
         input_shape=(KN,KN,d)
-        iter_f=model_iter_conf(w,(batch_size,)+input_shape,conv_first = True,cPad=cPad)
-        premier = 0
-        second = 1
+        conv_first = True
 
     # Maximum singular value 
     
     
     u=tf.random.uniform((batch_size,)+input_shape,minval=-1.0, maxval=1.0)
 
-    for it in range(nbIter):
-        u,v = iter_f(u) 
+    u,v = _power_iteration_conv(w, u, stride = Ks, conv_first = conv_first, cPad=cPad, niter=nbIter)
 
     sigma_max = tf.norm(v) #norm_u(v)
-    
+    #print(tf.norm(v))
+   
     # Minimum Singular Value
     
     bigConstant = 1.1 * sigma_max**2
     print("bigConstant "+str(bigConstant))
     u=tf.random.uniform((batch_size,)+input_shape,minval=-1.0, maxval=1.0)
 
-    for it in range(nbIter): 
-        u, v = iter_f(u, bigConstant=bigConstant)   
-        
+    u,v = _power_iteration_conv(w, u, stride = Ks, conv_first = conv_first, cPad=cPad, bigConstant = bigConstant, niter=nbIter)
+
     if bigConstant - tf.norm(u) >= 0:                      # cas normal
         sigma_min = tf.sqrt( bigConstant - tf.norm(u) )
     elif bigConstant - tf.norm(u) >= -0.0000000000001:    # précaution pour gérer les erreurs numériques
@@ -120,7 +91,7 @@ def compute_layer_vs_2D(w,Ks,N,nbIter):
     
     return (float(sigma_min) , float(sigma_max))
 
-def computeDenseSV(layer,input_size, numIter=100, log_out=None):
+def computeDenseSV(layer,input_sizes, numIter=100, log_out=None):
     weights=np.copy(layer.get_weights()[0])
     #print(weights.shape)
     kernel_n=weights.astype(dtype='float32')
@@ -133,14 +104,14 @@ def computeDenseSV(layer,input_size, numIter=100, log_out=None):
     printAndLog('kernel(W) SV (min, max, mean) '+str((SVmin,SVmax,np.mean(svdtmp))),log_out)
     return (SVmin,SVmax)
 
-def computeConvSV(layer,input_size, numIter=100, log_out=None):
+def computeConvSV(layer,input_sizes, numIter=100, log_out=None):
     Ks = layer.strides[0]
+    assert isinstance(input_sizes,tuple)
+    input_size=input_sizes[1]
     #isLinear = False
     weights=np.copy(layer.get_weights()[0])
     #print(weights.shape)
     kernel_n=weights.astype(dtype='float32')
-    printAndLog('----------------------------------------------------------',log_out)
-    printAndLog('Layer type '+str(type(layer))+" weight shape "+str(weights.shape),log_out)
     if Ks>1:
         #print("Warning np.linalg.svd incompatible with strides")
         SVmin,SVmax = compute_layer_vs_2D(weights,Ks,input_size,numIter)
@@ -154,19 +125,40 @@ def computeConvSV(layer,input_size, numIter=100, log_out=None):
         SVmax = np.max(svd)
         printAndLog("Conv(K) SV min et max [np.linalg.svd]: "+str((SVmin,SVmax)),log_out)
         printAndLog("Conv(K) SV mean et std [np.linalg.svd]: "+str((np.mean(svd),np.std(svd))),log_out)
-    #print("SV ",np.sort(np.reshape(svd,(-1,))))
+        #print("SV ",np.sort(np.reshape(svd,(-1,))))
     return (SVmin,SVmax)
 
 ### Warning this is not SV for non linear functions but grad min and grad max
-def computeActivationSV(layer,input_size, numIter=100, log_out=None):
-    if isinstance(layer,tf.keras.layers.ReLU):
-        return (0,1)
-    if isinstance(layer,deel.lip.activations.GroupSort):
-        return (1,1)
-    if isinstance(layer,deel.lip.activations.MaxMin):
-        return (1,1)
-    
-def computeLayerSV(layer,input_size=-1, numIter=100, log_out=None, supplementaryType2SV={}):
+def computeActivationSV(layer,input_sizes=[], numIter=100, log_out=None):
+    if isinstance(layer,tf.keras.layers.Activation):
+        function2SV = {
+            tf.keras.activations.relu: (0,1)
+        }
+        if layer.activation in function2SV.keys():
+            return function2SV[layer.activation]
+        else:
+            return (None,None)
+    layer2SV = {
+            tf.keras.layers.ReLU: (0,1),
+            deel.lip.activations.GroupSort: (1,1),
+            deel.lip.activations.MaxMin: (1,1),
+        }
+    if layer in layer2SV.keys():
+        return layer2SV[layer.activation]
+    else:
+        return (None,None)
+
+def addSV(layer,input_sizes=[], numIter=100, log_out=None):
+    assert isinstance(input_sizes,list)
+    return (1.0,1.0)*len(input_sizes)
+
+def bnSV(layer,input_sizes=[], numIter=100, log_out=None):
+    values = np.abs(layer.gamma.numpy()/np.sqrt(layer.moving_variance.numpy()+layer.epsilon))
+    upper = np.max(values)
+    lower = np.min(values)
+    return (lower,upper)
+
+def computeLayerSV(layer,input_sizes=[], numIter=100, log_out=None, supplementaryType2SV={}):
     defaultType2SV = {
         tf.keras.layers.Conv2D: computeConvSV,
         tf.keras.layers.Conv2DTranspose: computeConvSV,
@@ -176,6 +168,12 @@ def computeLayerSV(layer,input_size=-1, numIter=100, log_out=None, supplementary
         tf.keras.layers.Dense: computeDenseSV,
         deel.lip.layers.SpectralDense: computeDenseSV,
         deel.lip.layers.FrobeniusDense: computeDenseSV,
+        tf.keras.layers.ReLU: computeActivationSV,
+        tf.keras.layers.Activation: computeActivationSV,
+        deel.lip.activations.GroupSort: computeActivationSV,
+        deel.lip.activations.MaxMin: computeActivationSV,
+        tf.keras.layers.Add: addSV,
+        tf.keras.layers.BatchNormalization: bnSV,
     }
     src_layer = layer
     if isinstance(layer, Condensable):
@@ -183,37 +181,98 @@ def computeLayerSV(layer,input_size=-1, numIter=100, log_out=None, supplementary
         printAndLog(str(type(layer)),log_out)
         layer.condense()
         layer = layer.vanilla_export()
+    printAndLog('----------------------------------------------------------',log_out)
     if type(layer) in defaultType2SV.keys():
-        return defaultType2SV[type(layer)](layer,src_layer.input_shape[1],numIter=numIter,log_out=log_out)
+        lower_upper = defaultType2SV[type(layer)](layer,src_layer.input_shape,numIter=numIter,log_out=log_out)
     elif type(layer) in supplementaryType2SV.keys():
-        return supplementaryType2SV[type(layer)](layer,src_layer.input_shape[1],numIter=numIter,log_out=log_out)
+        lower_upper = supplementaryType2SV[type(layer)](layer,src_layer.input_shape,numIter=numIter,log_out=log_out)
     else:
         printAndLog("No SV for layer "+str(type(layer)),log_out)
-        return (None,None)
-  
-def computeModelSVs(model,input_size=-1, numIter=100, log_out=None, supplementaryType2SV={}):
+        lower_upper = (None,None)
+    printAndLog('Layer type '+str(type(layer))+" (upper,lower) = "+str(lower_upper),log_out)
+    return lower_upper
+
+def computeModelSVs(model,input_sizes=[], numIter=100, log_out=None, supplementaryType2SV={}):
     list_SV = []
     for layer in model.layers:
         if isinstance(layer,tf.keras.models.Model) or isinstance(layer,tf.keras.models.Sequential):
             list_SV.append((layer.name , (None,None)))
-            list_SV += computeModelSVs(layer,input_size=input_size, numIter=numIter, log_out=log_out, supplementaryType2SV=supplementaryType2SV)
+            list_SV += computeModelSVs(layer,input_sizes=input_sizes, numIter=numIter, log_out=log_out, supplementaryType2SV=supplementaryType2SV)
         else:
-            list_SV.append((layer.name , computeLayerSV(layer,input_size=input_size, numIter=numIter, log_out=log_out, supplementaryType2SV=supplementaryType2SV)))
+            list_SV.append((layer.name , computeLayerSV(layer,input_sizes=input_sizes, numIter=numIter, log_out=log_out, supplementaryType2SV=supplementaryType2SV)))
     return list_SV
 
+def generate_graph_layers(model,layerName,nodeN=0, outputN = -1,strName=None):
+    def addLayersOutput(lay,nodeN,outputN=-1):
+        dict_output2layName = {}
+        outs=lay.get_output_at(nodeN)
+        if isinstance(outs,list):
+            lay_output=outs
+        else:
+            lay_output=[outs]
+        if outputN<0:
+            for ll in lay_output:
+                dict_output2layName[ll.name]=lay.name
+        else:
+            dict_output2layName[lay_output[outputN].name]=lay.name
+        return dict_output2layName
+        
+    layers= model.layers
+    firstLay=model.get_layer(layerName)
+    listLayersOutputs=addLayersOutput(firstLay,nodeN,outputN)
+    listLayers=[firstLay.name]
+    listNodes=[nodeN]
+    dictInputLayers = {}
+    print("Start layer "+firstLay.name)
+    print("Start layer (Node "+str(nodeN)+") output"+str(firstLay.output))
+    for lay in layers:
+        listInputLayers = []
+        for nn in range(len(lay.inbound_nodes)):
+            ins=lay.get_input_at(nn)
+            #print("layer intput"+str(lay.input))
+            if isinstance(ins,list):
+                lay_input=ins
+            else:
+                lay_input=[ins]
+            #print(lay_input)
+            for ii in lay_input:
+                if ii.name in listLayersOutputs.keys():
+                    #print("new layer "+lay.name+" node "+str(nn))
+                    listLayers.append(lay.name)
+                    listLayersOutputs.update(addLayersOutput(lay,nn))
+                    listNodes.append(nn)
+                    listInputLayers.append(listLayersOutputs[ii.name])
+                    #print(listLayersOutputs)
+        dictInputLayers[lay.name]=listInputLayers
+    print(dictInputLayers)
+    return dictInputLayers
+
+
 def computeModelUpperLip(model,input_size=-1, numIter=100, log_out=None, supplementaryType2SV={}):
-    list_SV = computeModelSVs(model,input_size=-1, numIter=100, log_out=None, supplementaryType2SV={})
+    list_SV = computeModelSVs(model,input_sizes=[], numIter=100, log_out=None, supplementaryType2SV={})
+    dictInputLayers = generate_graph_layers(model,layerName=model.layers[1].name)
     UpperLip = 1.0
     LowerLip = 1.0
     count_nb_notknown = 0
+    dict_cumulatedSV = {}
     for svs in list_SV:
-        if svs[1][0] is not None:
-            UpperLip*=svs[1][1]
-            LowerLip*=svs[1][0]
+        inpLayers = dictInputLayers[svs[0]]
+        if len(inpLayers)==0:
+            UpperLip=1.
+            LowerLip=1.
         else:
-            count_nb_notknown+=1
-    printAndLog("Total lower and upper gradient bound: "+str(LowerLip)+", "+str(UpperLip),log_out)
-    return ['Total',(LowerLip,UpperLip)]  +  list_SV
- 
-
-
+            UpperLip=0.
+            LowerLip=0.
+            if svs[1][0] is not None:
+                for ii,iLay in enumerate(inpLayers):
+                    UpperLip+=dict_cumulatedSV[iLay][1]*svs[1][2*ii+1]
+                    LowerLip+=dict_cumulatedSV[iLay][0]*svs[1][2*ii+0]
+            else:
+                for ii,iLay in enumerate(inpLayers):
+                    UpperLip+=dict_cumulatedSV[iLay][1]
+                    LowerLip+=dict_cumulatedSV[iLay][0]
+                count_nb_notknown+=1
+        dict_cumulatedSV[svs[0]]=(LowerLip,UpperLip)
+    last_layer = list_SV[-1][0]
+    printAndLog("Cumulated lower and upper gradient bound "+str(last_layer)+": "+str(LowerLip)+", "+str(UpperLip),log_out)
+    return list_SV,dict_cumulatedSV

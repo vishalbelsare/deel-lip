@@ -8,6 +8,7 @@ normalization. This is done for internal use only.
 """
 import tensorflow as tf
 from tensorflow.keras import backend as K
+from .utils import padding_circular, transposeKernel, zero_upscale2D
 
 DEFAULT_NITER_BJORCK = 15
 DEFAULT_NITER_SPECTRAL = 3
@@ -114,3 +115,81 @@ def spectral_normalization(kernel, u, niter=DEFAULT_NITER_SPECTRAL):
     # normalize it
     W_bar = W_reshaped / sigma
     return W_bar, _u, sigma
+
+
+
+def _power_iteration_conv(w, u, stride = 1.0, conv_first = True, cPad=None, niter=DEFAULT_NITER_SPECTRAL, bigConstant=-1):
+    """
+    Internal function that performs the power iteration algorithm.
+
+    Args:
+        w: weights matrix that we want to find eigen vector
+        u: initialization of the eigen vector
+        niter: number of iteration, must be greater than 0
+
+    Returns:
+         u and v corresponding to the maximum eigenvalue
+
+    """
+    def iter_f(u):
+        u=u/tf.norm(u)
+        if cPad is None:
+            padType = 'SAME'
+        else:
+            padType='VALID'
+
+        if conv_first:
+            u_pad=padding_circular(u,cPad)
+            v= tf.nn.conv2d(u_pad,w,padding=padType,strides=(1,stride,stride,1))
+            v1 = zero_upscale2D(v,(stride,stride))
+            v1=padding_circular(v1,cPad)
+            wAdj=transposeKernel(w,True)
+            unew=tf.nn.conv2d(v1,wAdj,padding=padType,strides=1)
+        else:
+            u1 = zero_upscale2D(u,(stride,stride))
+            u_pad=padding_circular(u1,cPad)
+            wAdj=transposeKernel(w,True)
+            v=tf.nn.conv2d(u_pad,wAdj,padding=padType,strides=1)
+            v1=padding_circular(v,cPad)
+            unew= tf.nn.conv2d(v1,w,padding=padType,strides=(1,stride,stride,1))
+        if bigConstant> 0:
+            unew = bigConstant*u-unew
+        return unew,v
+
+    _u = u
+    for i in range(niter):
+        _u,_v = iter_f(_u)
+    return _u, _v
+
+@tf.function
+def spectral_normalization_conv(kernel, u=None, stride = 1.0, conv_first = True, cPad=None, niter=DEFAULT_NITER_SPECTRAL):
+    """
+    Normalize the convolution kernel to have it's max eigenvalue == 1.
+
+    Args:
+        kernel: the convolution kernel to normalize
+        u: initialization for the max eigen matrix
+        stride: stride parameter of convolutuions
+        conv_first: RO or CO case stride^2*C<M
+        cPad: Circular padding (k//2,k//2)
+        niter: number of iteration
+
+    Returns:
+        the normalized kernel w_bar, it's shape, the maximum eigen vector, and the
+        maximum eigen value
+
+    """
+    '''W_shape = kernel.shape
+    if u is None:
+        niter *= 2  # if u was not known increase number of iterations
+        u = K.random_normal(shape=tuple([1, W_shape[-1]]))
+    # Flatten the Tensor
+    W_reshaped = K.reshape(kernel, [-1, W_shape[-1]])'''
+    if niter <= 0:
+        return kernel, u, 1.0
+    _u, _v = _power_iteration_conv(kernel, u, stride = stride, conv_first = conv_first, cPad=cPad, niter=niter)
+    # Calculate Sigma
+    sigma = tf.norm(_v)
+    W_bar = kernel / sigma
+    return W_bar, _u, sigma
+

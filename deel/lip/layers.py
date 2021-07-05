@@ -46,7 +46,7 @@ from .normalizers import (
     reshaped_kernel_orthogonalization,
     DEFAULT_BETA_BJORCK,
 )
-from .normalizers import bjorck_normalization, spectral_normalization
+from .normalizers import bjorck_normalization, spectral_normalization, spectral_normalization_conv
 from .utils import padding_circular
 from .regularizers  import LorthRegularizer
 from tensorflow.keras.utils import register_keras_serializable
@@ -626,6 +626,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         bias_constraint=None,
         k_coef_lip=1.0,
         lambdaLorth=10.0,
+        niter_spectral=DEFAULT_NITER_SPECTRAL,
         **kwargs
     ):
         """
@@ -721,6 +722,11 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         )
         self._kwargs = kwargs
         self.set_klip_factor(k_coef_lip)
+        self.sig = None
+        self.u = None
+        self.niter_spectral = niter_spectral
+        self.spectral_input_shape = None
+        self.RO_case = True
 
     def compute_padded_shape(self,input_shape):
         if isinstance(input_shape, tf.TensorShape):
@@ -738,12 +744,52 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         print(internal_input_shape)
         return internal_input_shape
 
+    def set_spectral_input_shape(self):
+        (R0,R,C,M) = self.kernel.shape
+        self.cPad=[int(R0/2),int(R/2)]
+        stride = self.strides[0]
+
+        ##Compute minimal N
+        r = R//2
+        if r<1:
+            N=5
+        else:
+            N = 4*r+1
+            if stride>1:
+                N = int(0.5+N/stride)
+
+        if C*stride**2>M:
+            self.spectral_input_shape = (N,N,M)
+            self.RO_case = True
+        else:
+            self.spectral_input_shape = (stride*N,stride*N,C)
+            self.RO_case = False
+
+
     def build(self, input_shape):
         internal_input_shape = self.compute_padded_shape(input_shape)
         super(LorthRegulConv2D, self).build(internal_input_shape)
         self._init_lip_coef(input_shape)
         if self.kernel_regularizer is not None:
             self.kernel_regularizer.set_kernel_shape(self.kernel.shape)
+
+        self.set_spectral_input_shape()
+        self.u = self.add_weight(
+            shape=(1,)+self.spectral_input_shape,
+            initializer=RandomNormal(-1, 1),
+            name="sn",
+            trainable=False,
+            dtype=self.dtype,
+        )
+
+        self.sig = self.add_weight(
+            shape=tuple([1, 1]),  # maximum spectral  value
+            name="sigma",
+            trainable=False,
+            dtype=self.dtype,
+        )
+        self.sig.assign([[1.0]])
+
         self.built = True
 
     def compute_output_shape(self, input_shape):
@@ -754,13 +800,30 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         return 1.0  # this layer don't require a corrective factor
 
     def call(self, x, training=None):
+        if training and self.niter_spectral>0:
+            W_bar, _u, sigma = spectral_normalization_conv(
+                self.kernel, self.u, stride = self.strides[0], conv_first = not self.RO_case, cPad = self.cPad, niter=self.niter_spectral
+            )
+            self.sig.assign([[sigma]])
+            self.u.assign(_u)
+        else:
+            W_bar = self.kernel / self.sig
+
+        W_bar = self.kernel # / self.sig
+        kernel = self.kernel
+        self.kernel = W_bar
+
         x = padding_circular(x, self.padding_size)
         outputs = super(LorthRegulConv2D, self).call(x)
+
+        self.kernel = kernel
+
         return outputs
 
     def get_config(self):
         config = {
             "k_coef_lip": self.k_coef_lip,
+            "niter_spectral": self.niter_spectral,
             "lambdaLorth": self.lambdaLorth,
             "padding": self.actual_padding,   ## overwrite the internal padding
             "kernel_regularizer": None,        ## overwritte the kernel regul to None
@@ -769,6 +832,9 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         return dict(list(base_config.items()) + list(config.items()))
 
     def condense(self):
+        new_w = self.kernel / self.sig.numpy()
+        self.kernel.assign(new_w)
+        self.sig.assign([[1.0]])
         return
 
     def vanilla_export(self):
