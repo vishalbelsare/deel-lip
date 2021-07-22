@@ -108,7 +108,7 @@ class Lorth2D(Lorth):
         Args:
 
         """
-        super(Lorth2D, self).__init__()
+        super(Lorth2D, self).__init__(kernel_shape=kernel_shape,stride=stride,flag_deconv=flag_deconv)
         self.dim=2
         self.set_kernel_shape(self.kernel_shape)
 
@@ -184,6 +184,7 @@ class LorthRegularizer(Regularizer):
         else:
             raise NotImplementedError
     def set_kernel_shape(self, shape):
+        self.kernel_shape = shape
         self.lorth.set_kernel_shape(shape)
 
     def __call__(self, x):
