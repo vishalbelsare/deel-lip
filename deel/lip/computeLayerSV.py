@@ -2,7 +2,7 @@
 from deel.lip.activations import GroupSort
 import numpy as np
 import tensorflow as tf
-from .utils import _deel_export, padding_circular
+from .utils import padding_circular
 from .layers import LipschitzLayer, Condensable
 import deel.lip
 from .normalizers import _power_iteration_conv

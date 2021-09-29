@@ -5,10 +5,9 @@
 import warnings
 from abc import ABC, abstractmethod
 from tensorflow.keras.regularizers  import Regularizer
-from tensorflow.keras import backend as K
 import tensorflow as tf
 import numpy as np
-from .utils import _deel_export
+from tensorflow.keras.utils import register_keras_serializable
 
 class Lorth(ABC):
     def __init__(
@@ -157,7 +156,7 @@ class Lorth2D(Lorth):
         return target
 
 
-@_deel_export
+@register_keras_serializable("deel-lip", "LorthRegularizer")
 class LorthRegularizer(Regularizer):
     def __init__(
         self,
@@ -201,7 +200,7 @@ class LorthRegularizer(Regularizer):
         }
 
 
-@_deel_export
+@register_keras_serializable("deel-lip", "OrthDenseRegularizer")
 class OrthDenseRegularizer(Regularizer):
     def __init__(
         self,

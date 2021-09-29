@@ -1076,7 +1076,7 @@ class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
 
     def condense(self):
         wbar = (
-            self.kernel / tf.norm(self.kernel, axis=self.axis_norm) * self._get_coef()
+            self.kernel / tf.norm(self.kernel) * self._get_coef()
         )
         self.kernel.assign(wbar)
 

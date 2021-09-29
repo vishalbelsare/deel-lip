@@ -37,7 +37,7 @@ from deel.lip.layers import (
     LorthRegulConv2D,
 )
 from deel.lip.model import Sequential
-from deel.lip.utils import load_model, evaluate_lip_const
+from deel.lip.utils import evaluate_lip_const
 from deel.lip.regularizers import OrthDenseRegularizer
 from deel.lip.computeLayerSV import computeLayerSV, computeModelSVs, computeModelUpperLip
 
