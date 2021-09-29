@@ -46,9 +46,13 @@ from .normalizers import (
     reshaped_kernel_orthogonalization,
     DEFAULT_BETA_BJORCK,
 )
-from .normalizers import bjorck_normalization, spectral_normalization, spectral_normalization_conv
+from .normalizers import (
+    bjorck_normalization,
+    spectral_normalization,
+    spectral_normalization_conv,
+)
 from .utils import padding_circular
-from .regularizers  import LorthRegularizer
+from .regularizers import LorthRegularizer
 from tensorflow.keras.utils import register_keras_serializable
 
 
@@ -604,7 +608,6 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
         return layer
 
 
-
 @register_keras_serializable("deel-lip", "LorthRegulConv2D")
 class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
     def __init__(
@@ -617,7 +620,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         dilation_rate=(1, 1),
         activation=None,
         use_bias=True,
-        kernel_initializer='glorot_uniform',
+        kernel_initializer="glorot_uniform",
         bias_initializer="zeros",
         kernel_regularizer=None,
         bias_regularizer=None,
@@ -686,22 +689,33 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         This documentation reuse the body of the original keras.layers.Conv2D doc.
         """
         if padding != "circular":
-            raise RuntimeError("LorthRegulConv2D only support padding='circular' implemented in the layer")
-        self.padding_size = [s//2 for s in kernel_size]
+            raise RuntimeError(
+                "LorthRegulConv2D only support padding='circular' implemented in the layer"
+            )
+        self.padding_size = [s // 2 for s in kernel_size]
         self.actual_padding = padding  ## since self.padding is updated by super class
 
-        self.lambdaLorth=lambdaLorth
-        if lambdaLorth<0:
-            raise RuntimeError("LorthRegulConv2D requires a  positive regularization factor lambdaLorth")
-        if lambdaLorth==0:
+        self.lambdaLorth = lambdaLorth
+        if lambdaLorth < 0:
+            raise RuntimeError(
+                "LorthRegulConv2D requires a  positive regularization factor lambdaLorth"
+            )
+        if lambdaLorth == 0:
             warnings.warn("LorthRegularizer: No regularization with lambdaLorth==0")
 
         internal_padding = "valid"
         if kernel_regularizer is not None:
-            raise RuntimeError("LorthRegulConv2D define the kernel_regularizer (should be None)")
+            raise RuntimeError(
+                "LorthRegulConv2D define the kernel_regularizer (should be None)"
+            )
         regulLipConv = None
-        if lambdaLorth>0:
-            regulLipConv = LorthRegularizer(kernel_shape=None,stride=strides[0],lambdaLorth=lambdaLorth,flag_deconv=False)
+        if lambdaLorth > 0:
+            regulLipConv = LorthRegularizer(
+                kernel_shape=None,
+                stride=strides[0],
+                lambdaLorth=lambdaLorth,
+                flag_deconv=False,
+            )
         super(LorthRegulConv2D, self).__init__(
             filters=filters,
             kernel_size=kernel_size,
@@ -713,7 +727,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
             use_bias=use_bias,
             kernel_initializer=kernel_initializer,
             bias_initializer=bias_initializer,
-            kernel_regularizer=regulLipConv, ## internal value
+            kernel_regularizer=regulLipConv,  ## internal value
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer,
             kernel_constraint=kernel_constraint,
@@ -728,43 +742,42 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         self.spectral_input_shape = None
         self.RO_case = True
 
-    def compute_padded_shape(self,input_shape):
+    def compute_padded_shape(self, input_shape):
         if isinstance(input_shape, tf.TensorShape):
             internal_input_shape = input_shape.as_list()
         else:
             internal_input_shape = list(input_shape)
 
-        if self.data_format == 'channels_last':
+        if self.data_format == "channels_last":
             first_layer = 1
         else:
             first_layer = 2
-        for index,pad in enumerate(self.padding_size):
-            internal_input_shape[index+first_layer] += 2*pad
-        internal_input_shape= tf.TensorShape(internal_input_shape)
+        for index, pad in enumerate(self.padding_size):
+            internal_input_shape[index + first_layer] += 2 * pad
+        internal_input_shape = tf.TensorShape(internal_input_shape)
         print(internal_input_shape)
         return internal_input_shape
 
     def set_spectral_input_shape(self):
-        (R0,R,C,M) = self.kernel.shape
-        self.cPad=[int(R0/2),int(R/2)]
+        (R0, R, C, M) = self.kernel.shape
+        self.cPad = [int(R0 / 2), int(R / 2)]
         stride = self.strides[0]
 
         ##Compute minimal N
-        r = R//2
-        if r<1:
-            N=5
+        r = R // 2
+        if r < 1:
+            N = 5
         else:
-            N = 4*r+1
-            if stride>1:
-                N = int(0.5+N/stride)
+            N = 4 * r + 1
+            if stride > 1:
+                N = int(0.5 + N / stride)
 
-        if C*stride**2>M:
-            self.spectral_input_shape = (N,N,M)
+        if C * stride ** 2 > M:
+            self.spectral_input_shape = (N, N, M)
             self.RO_case = True
         else:
-            self.spectral_input_shape = (stride*N,stride*N,C)
+            self.spectral_input_shape = (stride * N, stride * N, C)
             self.RO_case = False
-
 
     def build(self, input_shape):
         internal_input_shape = self.compute_padded_shape(input_shape)
@@ -775,7 +788,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
 
         self.set_spectral_input_shape()
         self.u = self.add_weight(
-            shape=(1,)+self.spectral_input_shape,
+            shape=(1,) + self.spectral_input_shape,
             initializer=RandomNormal(-1, 1),
             name="sn",
             trainable=False,
@@ -800,16 +813,21 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         return 1.0  # this layer don't require a corrective factor
 
     def call(self, x, training=None):
-        if training and self.niter_spectral>0:
+        if training and self.niter_spectral > 0:
             W_bar, _u, sigma = spectral_normalization_conv(
-                self.kernel, self.u, stride = self.strides[0], conv_first = not self.RO_case, cPad = self.cPad, niter=self.niter_spectral
+                self.kernel,
+                self.u,
+                stride=self.strides[0],
+                conv_first=not self.RO_case,
+                cPad=self.cPad,
+                niter=self.niter_spectral,
             )
             self.sig.assign([[sigma]])
             self.u.assign(_u)
         else:
             W_bar = self.kernel / self.sig
 
-        W_bar = self.kernel # / self.sig
+        W_bar = self.kernel  # / self.sig
         kernel = self.kernel
         self.kernel = W_bar
 
@@ -825,8 +843,8 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
             "k_coef_lip": self.k_coef_lip,
             "niter_spectral": self.niter_spectral,
             "lambdaLorth": self.lambdaLorth,
-            "padding": self.actual_padding,   ## overwrite the internal padding
-            "kernel_regularizer": None,        ## overwritte the kernel regul to None
+            "padding": self.actual_padding,  ## overwrite the internal padding
+            "kernel_regularizer": None,  ## overwritte the kernel regul to None
         }
         base_config = super(LorthRegulConv2D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -858,6 +876,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         if self.use_bias:
             layer.bias.assign(self.bias.numpy())
         return layer
+
 
 @register_keras_serializable("deel-lip", "FrobeniusDense")
 class FrobeniusDense(Dense, LipschitzLayer, Condensable):
@@ -1075,9 +1094,7 @@ class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
         return dict(list(base_config.items()) + list(config.items()))
 
     def condense(self):
-        wbar = (
-            self.kernel / tf.norm(self.kernel) * self._get_coef()
-        )
+        wbar = self.kernel / tf.norm(self.kernel) * self._get_coef()
         self.kernel.assign(wbar)
 
     def vanilla_export(self):

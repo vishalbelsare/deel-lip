@@ -3,15 +3,17 @@
 # CRIAQ and ANITI - https://www.deel.ai/
 # =====================================================================================
 import os
-'''import sys
-sys.path.append('./')'''
+
+"""import sys
+sys.path.append('./')"""
 import pprint
 import unittest
 import numpy as np
 import tensorflow as tf
-'''physical_devices = tf.config.experimental.list_physical_devices('GPU')
+
+"""physical_devices = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
-'''
+"""
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import backend as K, Input, Model, metrics, callbacks
 
@@ -39,7 +41,11 @@ from deel.lip.layers import (
 from deel.lip.model import Sequential
 from deel.lip.utils import evaluate_lip_const
 from deel.lip.regularizers import OrthDenseRegularizer
-from deel.lip.computeLayerSV import computeLayerSV, computeModelSVs, computeModelUpperLip
+from deel.lip.computeLayerSV import (
+    computeLayerSV,
+    computeModelSVs,
+    computeModelUpperLip,
+)
 
 FIT = "fit_generator" if tf.__version__.startswith("2.0") else "fit"
 EVALUATE = "evaluate_generator" if tf.__version__.startswith("2.0") else "evaluate"
@@ -147,9 +153,7 @@ def generate_k_lip_model(layer_type: type, layer_params: dict, input_shape, k):
     return Model(inputs=a, outputs=b)
 
 
-
 class LipschitzLayersSVTest(unittest.TestCase):
-
     def train_compute_and_verifySV(
         self,
         layer_type: type,
@@ -182,7 +186,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
         if "dont_test_SVmin" in kwargs.keys():
             flag_test_SVmin = kwargs["dont_test_SVmin"]
         if "k_lip_tolerance_factor" not in kwargs.keys():
-            kwargs["k_lip_tolerance_factor"]=1.02
+            kwargs["k_lip_tolerance_factor"] = 1.02
         # clear session to avoid side effects from previous train
         K.clear_session()
         np.random.seed(42)
@@ -191,7 +195,9 @@ class LipschitzLayersSVTest(unittest.TestCase):
         print(model.summary())
 
         optimizer = Adam(lr=0.001)
-        model.compile(optimizer=optimizer, loss="mean_squared_error", metrics=[metrics.mse])
+        model.compile(
+            optimizer=optimizer, loss="mean_squared_error", metrics=[metrics.mse]
+        )
         # create the synthetic data generator
         output_shape = model.compute_output_shape((batch_size,) + input_shape)[1:]
         kernel = build_kernel(input_shape, output_shape, k_lip_data)
@@ -206,7 +212,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
             k_lip_model=k_lip_model,
         )
         callback_list = [hp.KerasCallback(logdir, hparams)]
-        #[callbacks.TensorBoard(logdir), hp.KerasCallback(logdir, hparams)]  ## bug profile pour le premier callback
+        # [callbacks.TensorBoard(logdir), hp.KerasCallback(logdir, hparams)]  ## bug profile pour le premier callback
         if kwargs["callbacks"] is not None:
             callback_list = callback_list + kwargs["callbacks"]
         # train model
@@ -222,7 +228,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
         file_writer.set_as_default()
         for ll in model.layers:
             print(ll.name)
-            SVmin,SVmax = computeLayerSV(ll)
+            SVmin, SVmax = computeLayerSV(ll)
             # log metrics
             if SVmin is not None:
                 tf.summary.text("Layer name", ll.name, step=epochs)
@@ -231,27 +237,32 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 self.assertLess(
                     SVmax,
                     k_lip_model * kwargs["k_lip_tolerance_factor"],
-                    msg=" the maximum singular value of the layer " + ll.name + " must be lower than the specified boundary",  # noqa: E501
+                    msg=" the maximum singular value of the layer "
+                    + ll.name
+                    + " must be lower than the specified boundary",  # noqa: E501
                 )
                 self.assertLessEqual(
                     SVmin,
                     SVmax,
-                    msg=" the minimum singular value of the layer " + ll.name + " must be lower than the maximum value",  # noqa: E501
+                    msg=" the minimum singular value of the layer "
+                    + ll.name
+                    + " must be lower than the maximum value",  # noqa: E501
                 )
                 if flag_test_SVmin:
                     self.assertGreater(
                         SVmin,
-                        k_lip_model * (2.0-kwargs["k_lip_tolerance_factor"]),
-                        msg=" the minimum singular value of the layer " + ll.name + " must be greater than the specified boundary",  # noqa: E501
+                        k_lip_model * (2.0 - kwargs["k_lip_tolerance_factor"]),
+                        msg=" the minimum singular value of the layer "
+                        + ll.name
+                        + " must be greater than the specified boundary",  # noqa: E501
                     )
         return
-
 
     def _apply_tests_bank(self, tests_bank):
         for test_params in tests_bank:
             pp.pprint(test_params)
             self.train_compute_and_verifySV(**test_params)
-    
+
     def test_spectral_dense(self):
         self._apply_tests_bank(
             [
@@ -309,7 +320,7 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-    
+
     def test_orthRegul_dense(self):
         """
         Tests for a standard Dense layer, for result comparison.
@@ -318,7 +329,10 @@ class LipschitzLayersSVTest(unittest.TestCase):
             [
                 dict(
                     layer_type=Dense,
-                    layer_params={"units": 6, "kernel_regularizer": OrthDenseRegularizer(1000.0)},
+                    layer_params={
+                        "units": 6,
+                        "kernel_regularizer": OrthDenseRegularizer(1000.0),
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -329,9 +343,8 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-    
 
-    '''dict(
+    """dict(
                     layer_type=Dense,
                     layer_params={"units": 4, "kernel_regularizer": OrthDenseRegularizer(1000.0)},
                     batch_size=1000,
@@ -341,10 +354,8 @@ class LipschitzLayersSVTest(unittest.TestCase):
                     k_lip_data=1.0,
                     k_lip_model=5.0,
                     callbacks=[],
-                ),''' ## No k factor in dense layer
-    
-    
-    
+                ),"""  ## No k factor in dense layer
+
     def test_spectralconv2d(self):
         self._apply_tests_bank(
             [
@@ -381,7 +392,6 @@ class LipschitzLayersSVTest(unittest.TestCase):
             ]
         )
 
-    
     def test_frobeniusconv2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
@@ -412,15 +422,18 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-    
-    
+
     def test_lorthregulconv2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
             [
                 dict(
                     layer_type=LorthRegulConv2D,
-                    layer_params={"filters": 2, "kernel_size": (3, 3),"lambdaLorth": 1000.0},
+                    layer_params={
+                        "filters": 2,
+                        "kernel_size": (3, 3),
+                        "lambdaLorth": 1000.0,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -432,7 +445,11 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=LorthRegulConv2D,
-                    layer_params={"filters": 2, "kernel_size": (3, 3),"lambdaLorth": 1000.0},
+                    layer_params={
+                        "filters": 2,
+                        "kernel_size": (3, 3),
+                        "lambdaLorth": 1000.0,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -444,8 +461,8 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-    
-    '''
+
+    """
     def test_scaledaveragepooling2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
@@ -739,18 +756,18 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
             ]
         )
-        '''
+        """
 
 
-'''import tensorflow as tf
+"""import tensorflow as tf
 from  deel.lip.computeLayerSV import  generate_graph_layers
 
 model = tf.keras.applications.ResNet50()
 model.summary()
 list_SV = computeModelUpperLip(model)
 print(list_SV)
-generate_graph_layers(model,layerName=model.layers[0].name)'''
-    
+generate_graph_layers(model,layerName=model.layers[0].name)"""
+
 if __name__ == "__main__":
-    
+
     unittest.main()

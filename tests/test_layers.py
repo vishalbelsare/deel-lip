@@ -3,16 +3,18 @@
 # CRIAQ and ANITI - https://www.deel.ai/
 # =====================================================================================
 import os
-'''import sys
-sys.path.append('./')'''
+
+"""import sys
+sys.path.append('./')"""
 
 import pprint
 import unittest
 
 import numpy as np
 import tensorflow as tf
-'''physical_devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True)'''
+
+"""physical_devices = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)"""
 
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import backend as K, Input, Model, metrics, callbacks
@@ -212,7 +214,7 @@ def train_k_lip_model(
         k_lip_data=k_lip_data,
         k_lip_model=k_lip_model,
     )
-    #callback_list = [hp.KerasCallback(logdir, hparams)]
+    # callback_list = [hp.KerasCallback(logdir, hparams)]
     callback_list = [callbacks.TensorBoard(logdir), hp.KerasCallback(logdir, hparams)]
     if kwargs["callbacks"] is not None:
         callback_list = callback_list + kwargs["callbacks"]
@@ -279,7 +281,7 @@ class LipschitzLayersTest(unittest.TestCase):
         )
         if test_params["layer_type"] != Dense:
             if "k_lip_tolerance_factor" not in test_params.keys():
-                test_params["k_lip_tolerance_factor"]=1.02
+                test_params["k_lip_tolerance_factor"] = 1.02
             self.assertLess(
                 emp_lip_const,
                 test_params["k_lip_model"] * test_params["k_lip_tolerance_factor"],
@@ -534,7 +536,10 @@ class LipschitzLayersTest(unittest.TestCase):
             [
                 dict(
                     layer_type=Dense,
-                    layer_params={"units": 6, "kernel_regularizer": OrthDenseRegularizer(100.0)},
+                    layer_params={
+                        "units": 6,
+                        "kernel_regularizer": OrthDenseRegularizer(100.0),
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=5,
@@ -545,7 +550,10 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=Dense,
-                    layer_params={"units": 2, "kernel_regularizer": OrthDenseRegularizer(100.0)},
+                    layer_params={
+                        "units": 2,
+                        "kernel_regularizer": OrthDenseRegularizer(100.0),
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=5,
@@ -556,7 +564,10 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=Dense,
-                    layer_params={"units": 4, "kernel_regularizer": OrthDenseRegularizer(100.0)},
+                    layer_params={
+                        "units": 4,
+                        "kernel_regularizer": OrthDenseRegularizer(100.0),
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=5,
@@ -567,7 +578,6 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-
 
     def test_spectralconv2d(self):
         self._apply_tests_bank(
@@ -651,14 +661,18 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-    
+
     def test_lorthregulconv2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
             [
                 dict(
                     layer_type=LorthRegulConv2D,
-                    layer_params={"filters": 2, "kernel_size": (3, 3),"lambdaLorth": 1000.0},
+                    layer_params={
+                        "filters": 2,
+                        "kernel_size": (3, 3),
+                        "lambdaLorth": 1000.0,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -670,7 +684,11 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=LorthRegulConv2D,
-                    layer_params={"filters": 2, "kernel_size": (3, 3),"lambdaLorth": 1000.0},
+                    layer_params={
+                        "filters": 2,
+                        "kernel_size": (3, 3),
+                        "lambdaLorth": 1000.0,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -682,7 +700,11 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=LorthRegulConv2D,
-                    layer_params={"filters": 2, "kernel_size": (3, 3),"lambdaLorth": 1000.0},
+                    layer_params={
+                        "filters": 2,
+                        "kernel_size": (3, 3),
+                        "lambdaLorth": 1000.0,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=10,
@@ -694,7 +716,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-    
+
     def test_scaledaveragepooling2d(self):
         # tests only checks that lip cons is enforced
         self._apply_tests_bank(
@@ -1052,7 +1074,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
             ]
         )
-    
+
 
 if __name__ == "__main__":
     unittest.main()
