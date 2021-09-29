@@ -2,10 +2,11 @@
 # rights reserved. DEEL is a research program operated by IVADO, IRT Saint Exupéry,
 # CRIAQ and ANITI - https://www.deel.ai/
 # =====================================================================================
-from tensorflow.keras.initializers import Initializer, Orthogonal
 from tensorflow.keras import initializers
-from .normalizers import reshaped_kernel_orthogonalization
+from tensorflow.keras.initializers import Initializer, Orthogonal
 from tensorflow.keras.utils import register_keras_serializable
+
+from .normalizers import reshaped_kernel_orthogonalization
 
 
 @register_keras_serializable("deel-lip", "SpectralInitializer")

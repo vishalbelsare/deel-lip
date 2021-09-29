@@ -6,6 +6,7 @@
 Contains utility functions.
 """
 from typing import Generator, Tuple, Any
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model

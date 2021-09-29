@@ -25,6 +25,7 @@ be done by setting the param `niter_bjorck=0`.
 
 import abc
 import warnings
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -36,6 +37,7 @@ from tensorflow.keras.layers import (
     AveragePooling2D,
     GlobalAveragePooling2D,
 )
+from tensorflow.keras.utils import register_keras_serializable
 
 from .constraints import SpectralConstraint
 from .initializers import SpectralInitializer
@@ -47,13 +49,10 @@ from .normalizers import (
     DEFAULT_BETA_BJORCK,
 )
 from .normalizers import (
-    bjorck_normalization,
-    spectral_normalization,
     spectral_normalization_conv,
 )
-from .utils import padding_circular
 from .regularizers import LorthRegularizer
-from tensorflow.keras.utils import register_keras_serializable
+from .utils import padding_circular
 
 
 class LipschitzLayer(abc.ABC):

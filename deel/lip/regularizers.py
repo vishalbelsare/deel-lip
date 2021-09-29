@@ -4,9 +4,10 @@
 # =====================================================================================
 import warnings
 from abc import ABC, abstractmethod
-from tensorflow.keras.regularizers import Regularizer
-import tensorflow as tf
+
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.regularizers import Regularizer
 from tensorflow.keras.utils import register_keras_serializable
 
 

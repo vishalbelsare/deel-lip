@@ -8,6 +8,7 @@ normalization. This is done for internal use only.
 """
 import tensorflow as tf
 from tensorflow.keras import backend as K
+
 from .utils import padding_circular, transposeKernel, zero_upscale2D
 
 DEFAULT_NITER_BJORCK = 15

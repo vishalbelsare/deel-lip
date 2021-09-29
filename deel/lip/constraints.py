@@ -9,8 +9,9 @@ regular layers.
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from tensorflow.keras.constraints import Constraint
-from .normalizers import reshaped_kernel_orthogonalization
 from tensorflow.keras.utils import register_keras_serializable
+
+from .normalizers import reshaped_kernel_orthogonalization
 
 
 @register_keras_serializable("deel-lip", "WeightClipConstraint")

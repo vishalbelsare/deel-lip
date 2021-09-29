@@ -9,12 +9,14 @@ for condensation and vanilla exportation.
 import math
 from typing import Dict
 from warnings import warn
+
 import numpy as np
 from tensorflow import Tensor
 from tensorflow.keras import Sequential as KerasSequential, Model as KerasModel
 from tensorflow.keras.layers import Input, InputLayer
-from .layers import LipschitzLayer, Condensable
 from tensorflow.keras.utils import register_keras_serializable
+
+from .layers import LipschitzLayer, Condensable
 
 
 @register_keras_serializable("deel-lip", "Sequential")

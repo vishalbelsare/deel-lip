@@ -1,18 +1,11 @@
-from deel.lip.activations import GroupSort
 import numpy as np
 import tensorflow as tf
-from .utils import padding_circular
-from .layers import LipschitzLayer, Condensable
+
 import deel.lip
+from deel.lip.activations import GroupSort
+from .layers import LipschitzLayer, Condensable
 from .normalizers import _power_iteration_conv
 
-from tensorflow.keras.layers import (
-    Layer,
-    Dense,
-    Conv2D,
-    AveragePooling2D,
-    GlobalAveragePooling2D,
-)
 
 ## Not the best place and no the best code => may replace by wandb
 def printAndLog(txt, log_out=None):
