@@ -4,17 +4,11 @@
 # =====================================================================================
 import os
 
-"""import sys
-sys.path.append('./')"""
-
 import pprint
 import unittest
 
 import numpy as np
 import tensorflow as tf
-
-"""physical_devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True)"""
 
 from tensorboard.plugins.hparams import api as hp
 from tensorflow.keras import backend as K, Input, Model, metrics, callbacks
@@ -48,7 +42,6 @@ from deel.lip.layers import (
     LorthRegulConv2D,
     ScaledGlobalL2NormPooling2D,
 )
-from deel.lip.layers import LipschitzLayer, Condensable
 from deel.lip.model import Sequential
 from deel.lip.utils import evaluate_lip_const
 from deel.lip.regularizers import OrthDenseRegularizer

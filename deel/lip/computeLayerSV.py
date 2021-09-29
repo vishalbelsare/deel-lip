@@ -1,13 +1,19 @@
 import numpy as np
 import tensorflow as tf
 
-import deel.lip
-from deel.lip.activations import GroupSort
-from .layers import LipschitzLayer, Condensable
+from .activations import GroupSort, MaxMin
+from .layers import (
+    Condensable,
+    SpectralConv2D,
+    FrobeniusConv2D,
+    LorthRegulConv2D,
+    SpectralDense,
+    FrobeniusDense,
+)
 from .normalizers import _power_iteration_conv
 
 
-## Not the best place and no the best code => may replace by wandb
+# Not the best place and no the best code => may replace by wandb
 def printAndLog(txt, log_out=None):
     print(txt)
     if log_out is not None:
@@ -98,14 +104,12 @@ def compute_layer_vs_2D(w, Ks, N, nbIter):
 
 def computeDenseSV(layer, input_sizes, numIter=100, log_out=None):
     weights = np.copy(layer.get_weights()[0])
-    # print(weights.shape)
-    kernel_n = weights.astype(dtype="float32")
     printAndLog("----------------------------------------------------------", log_out)
     printAndLog(
         "Layer type " + str(type(layer)) + " weight shape " + str(weights.shape),
         log_out,
     )
-    new_w = np.reshape(weights, [weights.shape[0], -1])
+    new_w = weights  # np.reshape(weights, [weights.shape[0], -1])
     svdtmp = np.linalg.svd(new_w, compute_uv=False)
     SVmin = np.min(svdtmp)
     SVmax = np.max(svdtmp)
@@ -148,7 +152,7 @@ def computeConvSV(layer, input_sizes, numIter=100, log_out=None):
     return (SVmin, SVmax)
 
 
-### Warning this is not SV for non linear functions but grad min and grad max
+# Warning this is not SV for non linear functions but grad min and grad max
 def computeActivationSV(layer, input_sizes=[], numIter=100, log_out=None):
     if isinstance(layer, tf.keras.layers.Activation):
         function2SV = {tf.keras.activations.relu: (0, 1)}
@@ -158,8 +162,8 @@ def computeActivationSV(layer, input_sizes=[], numIter=100, log_out=None):
             return (None, None)
     layer2SV = {
         tf.keras.layers.ReLU: (0, 1),
-        deel.lip.activations.GroupSort: (1, 1),
-        deel.lip.activations.MaxMin: (1, 1),
+        GroupSort: (1, 1),
+        MaxMin: (1, 1),
     }
     if layer in layer2SV.keys():
         return layer2SV[layer.activation]
@@ -187,16 +191,16 @@ def computeLayerSV(
     defaultType2SV = {
         tf.keras.layers.Conv2D: computeConvSV,
         tf.keras.layers.Conv2DTranspose: computeConvSV,
-        deel.lip.layers.SpectralConv2D: computeConvSV,
-        deel.lip.layers.FrobeniusConv2D: computeConvSV,
-        deel.lip.layers.LorthRegulConv2D: computeConvSV,
+        SpectralConv2D: computeConvSV,
+        FrobeniusConv2D: computeConvSV,
+        LorthRegulConv2D: computeConvSV,
         tf.keras.layers.Dense: computeDenseSV,
-        deel.lip.layers.SpectralDense: computeDenseSV,
-        deel.lip.layers.FrobeniusDense: computeDenseSV,
+        SpectralDense: computeDenseSV,
+        FrobeniusDense: computeDenseSV,
         tf.keras.layers.ReLU: computeActivationSV,
         tf.keras.layers.Activation: computeActivationSV,
-        deel.lip.activations.GroupSort: computeActivationSV,
-        deel.lip.activations.MaxMin: computeActivationSV,
+        GroupSort: computeActivationSV,
+        MaxMin: computeActivationSV,
         tf.keras.layers.Add: addSV,
         tf.keras.layers.BatchNormalization: bnSV,
     }

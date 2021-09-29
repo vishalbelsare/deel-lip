@@ -28,8 +28,8 @@ class Lorth(ABC):
         self.stride = stride
         self.kernel_shape = kernel_shape
         self.flag_deconv = flag_deconv
-        self.r = 0  ## will be set by set_kernel_shape
-        self.delta = 0  ## will be set by set_kernel_shape
+        self.r = 0  # will be set by set_kernel_shape
+        self.delta = 0  # will be set by set_kernel_shape
         self.dim = None  # will be set by upper class
         # self.set_kernel_shape(self.kernel_shape)  to be done in upper class
 
@@ -43,7 +43,7 @@ class Lorth(ABC):
     def compute_delta(self):
         delta = 0.0
         (R, C, M) = self.get_kernel_shape()
-        if self.flag_deconv == False:
+        if not self.flag_deconv:
             delta = M - (self.stride ** self.dim) * C
         else:
             delta = C - (self.stride ** self.dim) * M
@@ -66,7 +66,7 @@ class Lorth(ABC):
     def check_if_orthconv_exists(self):
         assert True, "check_if_orthconv_exists Not implemented"
         (R, C, M) = self.get_kernel_shape()
-        ##RO case
+        # RO case
         if C * self.stride ** self.dim >= M:
             if M > C * (R ** self.dim):
                 raise RuntimeError(
@@ -92,17 +92,17 @@ class Lorth(ABC):
         self.r = R // 2
         self.padding = (
             (R - 1) // self.stride
-        ) * self.stride  ## padding size for Lorth convolution
+        ) * self.stride  # padding size for Lorth convolution
         self.delta = self.compute_delta()
         self.check_if_orthconv_exists()
 
     @abstractmethod
     def computeConvKxK(self, w, verbose=False):
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
-    def computeTarget(self, w, verbose=False):
-        pass
+    def computeTarget(self, w, output_shape, verbose=False):
+        raise NotImplementedError()
 
     def computeLorth(self, w, verbose=False):
         output = self.computeConvKxK(w, verbose=verbose)
@@ -207,11 +207,12 @@ class LorthRegularizer(Regularizer):
         kernel_shape=None,
         stride=1,
         lambdaLorth=1.0,
-        dim=2,  ## 2 for 2D conv, 1 for 1D conv
+        dim=2,  # 2 for 2D conv, 1 for 1D conv
         flag_deconv=False,
     ) -> None:
         """
-        Regularize a conv kernel to be orthogonal (sigma min and max =1) using Lorth regularizer
+        Regularize a conv kernel to be orthogonal (sigma min and max =1)
+        using Lorth regularizer
 
         Args:
 
@@ -254,7 +255,8 @@ class OrthDenseRegularizer(Regularizer):
         lambdaOrth=1.0,
     ) -> None:
         """
-        Regularize a Dense kernel to be orthogonal (sigma min and max =1) minimizing W.W^T-Id
+        Regularize a Dense kernel to be orthogonal (sigma min and max =1)
+        minimizing W.W^T-Id
 
         Args:
 

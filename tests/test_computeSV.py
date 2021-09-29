@@ -3,19 +3,13 @@
 # CRIAQ and ANITI - https://www.deel.ai/
 # =====================================================================================
 import os
-
-"""import sys
-sys.path.append('./')"""
 import pprint
 import unittest
+
 import numpy as np
 import tensorflow as tf
-
-"""physical_devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(physical_devices[0], True)
-"""
 from tensorboard.plugins.hparams import api as hp
-from tensorflow.keras import backend as K, Input, Model, metrics, callbacks
+from tensorflow.keras import backend as K, Input, Model, metrics
 
 if tf.__version__.startswith("2.0"):
     from tensorflow.python.framework.random_seed import set_seed
@@ -24,27 +18,18 @@ else:
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.optimizers import Adam
-from deel.lip.callbacks import CondenseCallback, MonitorCallback
 from deel.lip.layers import (
     LipschitzLayer,
     SpectralDense,
     SpectralConv2D,
     FrobeniusDense,
     FrobeniusConv2D,
-    ScaledAveragePooling2D,
-    ScaledGlobalAveragePooling2D,
-    ScaledL2NormPooling2D,
-    InvertibleDownSampling,
-    InvertibleUpSampling,
     LorthRegulConv2D,
 )
 from deel.lip.model import Sequential
-from deel.lip.utils import evaluate_lip_const
 from deel.lip.regularizers import OrthDenseRegularizer
 from deel.lip.computeLayerSV import (
     computeLayerSV,
-    computeModelSVs,
-    computeModelUpperLip,
 )
 
 FIT = "fit_generator" if tf.__version__.startswith("2.0") else "fit"
@@ -212,7 +197,6 @@ class LipschitzLayersSVTest(unittest.TestCase):
             k_lip_model=k_lip_model,
         )
         callback_list = [hp.KerasCallback(logdir, hparams)]
-        # [callbacks.TensorBoard(logdir), hp.KerasCallback(logdir, hparams)]  ## bug profile pour le premier callback
         if kwargs["callbacks"] is not None:
             callback_list = callback_list + kwargs["callbacks"]
         # train model
@@ -268,7 +252,10 @@ class LipschitzLayersSVTest(unittest.TestCase):
             [
                 dict(
                     layer_type=SpectralDense,
-                    layer_params={"units": 4, "use_bias": False, "niter_spectral": 5},
+                    layer_params={
+                        "units": 4,
+                        "use_bias": False,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=5,
@@ -279,7 +266,9 @@ class LipschitzLayersSVTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=SpectralDense,
-                    layer_params={"units": 4, "niter_spectral": 5},
+                    layer_params={
+                        "units": 4,
+                    },
                     batch_size=1000,
                     steps_per_epoch=125,
                     epochs=5,
@@ -344,17 +333,17 @@ class LipschitzLayersSVTest(unittest.TestCase):
             ]
         )
 
-    """dict(
-                    layer_type=Dense,
-                    layer_params={"units": 4, "kernel_regularizer": OrthDenseRegularizer(1000.0)},
-                    batch_size=1000,
-                    steps_per_epoch=125,
-                    epochs=5,
-                    input_shape=(4,),
-                    k_lip_data=1.0,
-                    k_lip_model=5.0,
-                    callbacks=[],
-                ),"""  ## No k factor in dense layer
+    # dict(
+    #     layer_type=Dense,
+    #     layer_params={"units": 4, "kernel_regularizer": OrthDenseRegularizer(1000.0)},
+    #     batch_size=1000,
+    #     steps_per_epoch=125,
+    #     epochs=5,
+    #     input_shape=(4,),
+    #     k_lip_data=1.0,
+    #     k_lip_model=5.0,
+    #     callbacks=[],
+    # ),  # No k factor in dense layer
 
     def test_spectralconv2d(self):
         self._apply_tests_bank(

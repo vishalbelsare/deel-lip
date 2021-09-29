@@ -633,7 +633,8 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
     ):
         """
         This class is a Conv2D Layer regularized such that all singular of it's kernel
-        are 1. The computation is based on LorthRegularizer and requires a circular padding (added in the layer).
+        are 1. The computation is based on LorthRegularizer and requires a circular
+        padding (added in the layer).
         The computation is done in three steps:
 
         1. apply a circular padding for ensuring 'same' configuration.
@@ -689,15 +690,17 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         """
         if padding != "circular":
             raise RuntimeError(
-                "LorthRegulConv2D only support padding='circular' implemented in the layer"
+                "LorthRegulConv2D only support padding='circular' implemented in the "
+                "layer "
             )
         self.padding_size = [s // 2 for s in kernel_size]
-        self.actual_padding = padding  ## since self.padding is updated by super class
+        self.actual_padding = padding  # since self.padding is updated by super class
 
         self.lambdaLorth = lambdaLorth
         if lambdaLorth < 0:
             raise RuntimeError(
-                "LorthRegulConv2D requires a  positive regularization factor lambdaLorth"
+                "LorthRegulConv2D requires a  positive regularization factor "
+                "lambdaLorth"
             )
         if lambdaLorth == 0:
             warnings.warn("LorthRegularizer: No regularization with lambdaLorth==0")
@@ -719,14 +722,14 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
             filters=filters,
             kernel_size=kernel_size,
             strides=strides,
-            padding=internal_padding,  ## internal value
+            padding=internal_padding,  # internal value
             data_format=data_format,
             dilation_rate=dilation_rate,
             activation=activation,
             use_bias=use_bias,
             kernel_initializer=kernel_initializer,
             bias_initializer=bias_initializer,
-            kernel_regularizer=regulLipConv,  ## internal value
+            kernel_regularizer=regulLipConv,  # internal value
             bias_regularizer=bias_regularizer,
             activity_regularizer=activity_regularizer,
             kernel_constraint=kernel_constraint,
@@ -762,7 +765,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
         self.cPad = [int(R0 / 2), int(R / 2)]
         stride = self.strides[0]
 
-        ##Compute minimal N
+        # Compute minimal N
         r = R // 2
         if r < 1:
             N = 5
@@ -842,8 +845,8 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
             "k_coef_lip": self.k_coef_lip,
             "niter_spectral": self.niter_spectral,
             "lambdaLorth": self.lambdaLorth,
-            "padding": self.actual_padding,  ## overwrite the internal padding
-            "kernel_regularizer": None,  ## overwritte the kernel regul to None
+            "padding": self.actual_padding,  # overwrite the internal padding
+            "kernel_regularizer": None,  # overwrite the kernel regul to None
         }
         base_config = super(LorthRegulConv2D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -867,7 +870,7 @@ class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
             use_bias=self.use_bias,
             kernel_initializer="glorot_uniform",
             bias_initializer="zeros",
-            lambdaLorth=0.0,  ## No regularization after export
+            lambdaLorth=0.0,  # No regularization after export
             **self._kwargs
         )
         layer.build(self.input_shape)
