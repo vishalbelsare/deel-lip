@@ -20,39 +20,26 @@ reparametrization. Currently, are implemented:
 By default the layers are 1 Lipschitz almost everywhere, which is efficient for
 wasserstein distance estimation. However for other problems (such as adversarial
 robustness) the user may want to use layers that are at most 1 lipschitz, this can
-be done by setting the param `niter_bjorck=0`.
+be done by setting the param `eps_bjorck=None`.
 """
 
 import abc
-import warnings
 
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from tensorflow.keras.initializers import RandomNormal
-from tensorflow.keras.layers import (
-    Layer,
-    Dense,
-    Conv2D,
-    AveragePooling2D,
-    GlobalAveragePooling2D,
-)
-from tensorflow.keras.utils import register_keras_serializable
+import tensorflow.keras.layers as keraslayers
 
 from .constraints import SpectralConstraint
 from .initializers import SpectralInitializer
 from .normalizers import (
-    DEFAULT_NITER_BJORCK,
-    DEFAULT_NITER_SPECTRAL,
-    DEFAULT_NITER_SPECTRAL_INIT,
+    DEFAULT_EPS_BJORCK,
+    DEFAULT_EPS_SPECTRAL,
     reshaped_kernel_orthogonalization,
     DEFAULT_BETA_BJORCK,
 )
-from .normalizers import (
-    spectral_normalization_conv,
-)
-from .regularizers import LorthRegularizer
-from .utils import padding_circular
+from tensorflow.keras.utils import register_keras_serializable
 
 
 class LipschitzLayer(abc.ABC):
@@ -164,16 +151,13 @@ class Condensable(abc.ABC):
 
 
 @register_keras_serializable("deel-lip", "SpectralDense")
-class SpectralDense(Dense, LipschitzLayer, Condensable):
+class SpectralDense(keraslayers.Dense, LipschitzLayer, Condensable):
     def __init__(
         self,
         units,
         activation=None,
         use_bias=True,
-        kernel_initializer=SpectralInitializer(
-            niter_spectral=DEFAULT_NITER_SPECTRAL_INIT,
-            niter_bjorck=DEFAULT_NITER_BJORCK,
-        ),
+        kernel_initializer=SpectralInitializer(),
         bias_initializer="zeros",
         kernel_regularizer=None,
         bias_regularizer=None,
@@ -181,8 +165,8 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
         kernel_constraint=None,
         bias_constraint=None,
         k_coef_lip=1.0,
-        niter_spectral=DEFAULT_NITER_SPECTRAL,
-        niter_bjorck=DEFAULT_NITER_BJORCK,
+        eps_spectral=DEFAULT_EPS_SPECTRAL,
+        eps_bjorck=DEFAULT_EPS_BJORCK,
         beta_bjorck=DEFAULT_BETA_BJORCK,
         **kwargs
     ):
@@ -211,8 +195,8 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
                 the `kernel` weights matrix.
             bias_constraint: Constraint function applied to the bias vector.
             k_coef_lip: lipschitz constant to ensure
-            niter_spectral: number of iteration to find the maximum singular value.
-            niter_bjorck: number of iteration with Bjorck algorithm.
+            eps_spectral: stopping criterion for the iterative power algorithm.
+            eps_bjorck: stopping criterion Bjorck algorithm.
             beta_bjorck: beta parameter in bjorck algorithm.
 
         Input shape:
@@ -242,17 +226,21 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
         )
         self._kwargs = kwargs
         self.set_klip_factor(k_coef_lip)
-        self.niter_spectral = niter_spectral
-        self.niter_bjorck = niter_bjorck
+        self.eps_spectral = eps_spectral
         self.beta_bjorck = beta_bjorck
-        if not ((self.beta_bjorck <= 0.5) and (self.beta_bjorck > 0.0)):
+        if (self.beta_bjorck is not None) and (
+            not ((self.beta_bjorck <= 0.5) and (self.beta_bjorck > 0.0))
+        ):
             raise RuntimeError("beta_bjorck must be in ]0, 0.5]")
+        self.eps_bjorck = eps_bjorck
+        if (self.eps_bjorck is not None) and (not self.eps_bjorck > 0.0):
+            raise RuntimeError("eps_bjorck must be in > 0")
         self.u = None
         self.sig = None
         self.wbar = None
         self.built = False
-        if self.niter_spectral < 1:
-            raise RuntimeError("niter_spectral has to be > 0")
+        if self.eps_spectral < 0:
+            raise RuntimeError("eps_spectral has to be > 0")
 
     def build(self, input_shape):
         super(SpectralDense, self).build(input_shape)
@@ -285,8 +273,8 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
                 self.kernel,
                 self.u,
                 self._get_coef(),
-                self.niter_spectral,
-                self.niter_bjorck,
+                self.eps_spectral,
+                self.eps_bjorck,
                 self.beta_bjorck,
             )
             self.wbar.assign(wbar)
@@ -304,8 +292,8 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
     def get_config(self):
         config = {
             "k_coef_lip": self.k_coef_lip,
-            "niter_spectral": self.niter_spectral,
-            "niter_bjorck": self.niter_bjorck,
+            "eps_spectral": self.eps_spectral,
+            "eps_bjorck": self.eps_bjorck,
             "beta_bjorck": self.beta_bjorck,
         }
         base_config = super(SpectralDense, self).get_config()
@@ -316,8 +304,8 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
             self.kernel,
             self.u,
             self._get_coef(),
-            self.niter_spectral,
-            self.niter_bjorck,
+            self.eps_spectral,
+            self.eps_bjorck,
             self.beta_bjorck,
         )
         self.kernel.assign(wbar)
@@ -326,7 +314,7 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
 
     def vanilla_export(self):
         self._kwargs["name"] = self.name
-        layer = Dense(
+        layer = keraslayers.Dense(
             units=self.units,
             activation=self.activation,
             use_bias=self.use_bias,
@@ -342,7 +330,7 @@ class SpectralDense(Dense, LipschitzLayer, Condensable):
 
 
 @register_keras_serializable("deel-lip", "SpectralConv2D")
-class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
+class SpectralConv2D(keraslayers.Conv2D, LipschitzLayer, Condensable):
     def __init__(
         self,
         filters,
@@ -353,10 +341,7 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
         dilation_rate=(1, 1),
         activation=None,
         use_bias=True,
-        kernel_initializer=SpectralInitializer(
-            niter_spectral=DEFAULT_NITER_SPECTRAL_INIT,
-            niter_bjorck=DEFAULT_NITER_BJORCK,
-        ),
+        kernel_initializer=SpectralInitializer(),
         bias_initializer="zeros",
         kernel_regularizer=None,
         bias_regularizer=None,
@@ -364,8 +349,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
         kernel_constraint=None,
         bias_constraint=None,
         k_coef_lip=1.0,
-        niter_spectral=DEFAULT_NITER_SPECTRAL,
-        niter_bjorck=DEFAULT_NITER_BJORCK,
+        eps_spectral=DEFAULT_EPS_SPECTRAL,
+        eps_bjorck=DEFAULT_EPS_BJORCK,
         beta_bjorck=DEFAULT_BETA_BJORCK,
         **kwargs
     ):
@@ -424,8 +409,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
             kernel_constraint: Constraint function applied to the kernel matrix.
             bias_constraint: Constraint function applied to the bias vector.
             k_coef_lip: lipschitz constant to ensure
-            niter_spectral: number of iteration to find the maximum singular value.
-            niter_bjorck: number of iteration with Bjorck algorithm.
+            eps_spectral: stopping criterion for the iterative power algorithm.
+            eps_bjorck: stopping criterion Bjorck algorithm.
             beta_bjorck: beta parameter in bjorck algorithm.
 
         This documentation reuse the body of the original keras.layers.Conv2D doc.
@@ -461,13 +446,17 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
         self.u = None
         self.sig = None
         self.wbar = None
-        self.niter_spectral = niter_spectral
+        self.eps_spectral = eps_spectral
         self.beta_bjorck = beta_bjorck
-        if not ((self.beta_bjorck <= 0.5) and (self.beta_bjorck > 0.0)):
+        if (self.beta_bjorck is not None) and (
+            not ((self.beta_bjorck <= 0.5) and (self.beta_bjorck > 0.0))
+        ):
             raise RuntimeError("beta_bjorck must be in ]0, 0.5]")
-        self.niter_bjorck = niter_bjorck
-        if self.niter_spectral < 1:
-            raise RuntimeError("niter_spectral has to be > 0")
+        self.eps_bjorck = eps_bjorck
+        if (self.eps_bjorck is not None) and (not self.eps_bjorck > 0.0):
+            raise RuntimeError("eps_bjorck must be in > 0")
+        if self.eps_spectral < 0:
+            raise RuntimeError("eps_spectral has to be > 0")
 
     def build(self, input_shape):
         super(SpectralConv2D, self).build(input_shape)
@@ -539,8 +528,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
                 self.kernel,
                 self.u,
                 self._get_coef(),
-                self.niter_spectral,
-                self.niter_bjorck,
+                self.eps_spectral,
+                self.eps_bjorck,
                 self.beta_bjorck,
             )
             self.wbar.assign(wbar)
@@ -565,8 +554,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
     def get_config(self):
         config = {
             "k_coef_lip": self.k_coef_lip,
-            "niter_spectral": self.niter_spectral,
-            "niter_bjorck": self.niter_bjorck,
+            "eps_spectral": self.eps_spectral,
+            "eps_bjorck": self.eps_bjorck,
             "beta_bjorck": self.beta_bjorck,
         }
         base_config = super(SpectralConv2D, self).get_config()
@@ -577,8 +566,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
             self.kernel,
             self.u,
             self._get_coef(),
-            self.niter_spectral,
-            self.niter_bjorck,
+            self.eps_spectral,
+            self.eps_bjorck,
             self.beta_bjorck,
         )
         self.kernel.assign(wbar)
@@ -587,7 +576,7 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
 
     def vanilla_export(self):
         self._kwargs["name"] = self.name
-        layer = Conv2D(
+        layer = keraslayers.Conv2D(
             filters=self.filters,
             kernel_size=self.kernel_size,
             strides=self.strides,
@@ -607,281 +596,8 @@ class SpectralConv2D(Conv2D, LipschitzLayer, Condensable):
         return layer
 
 
-@register_keras_serializable("deel-lip", "LorthRegulConv2D")
-class LorthRegulConv2D(Conv2D, LipschitzLayer, Condensable):
-    def __init__(
-        self,
-        filters,
-        kernel_size,
-        strides=(1, 1),
-        padding="circular",
-        data_format=None,
-        dilation_rate=(1, 1),
-        activation=None,
-        use_bias=True,
-        kernel_initializer="glorot_uniform",
-        bias_initializer="zeros",
-        kernel_regularizer=None,
-        bias_regularizer=None,
-        activity_regularizer=None,
-        kernel_constraint=None,
-        bias_constraint=None,
-        k_coef_lip=1.0,
-        lambdaLorth=10.0,
-        niter_spectral=DEFAULT_NITER_SPECTRAL,
-        **kwargs
-    ):
-        """
-        This class is a Conv2D Layer regularized such that all singular of it's kernel
-        are 1. The computation is based on LorthRegularizer and requires a circular
-        padding (added in the layer).
-        The computation is done in three steps:
-
-        1. apply a circular padding for ensuring 'same' configuration.
-        2. apply conv2D.
-        3. regularize kernel with Lorth Regul.
-
-        Args:
-            filters: Integer, the dimensionality of the output space
-                (i.e. the number of output filters in the convolution).
-            kernel_size: An integer or tuple/list of 2 integers, specifying the
-                height and width of the 2D convolution window.
-                Can be a single integer to specify the same value for
-                all spatial dimensions.
-            strides: An integer or tuple/list of 2 integers,
-                specifying the strides of the convolution along the height and width.
-                Can be a single integer to specify the same value for
-                all spatial dimensions.
-                Specifying any stride value != 1 is incompatible with specifying
-                any `dilation_rate` value != 1.
-            padding: `"circular"` ONLY (case-insensitive).
-            data_format: A string,
-                one of `channels_last` (default) or `channels_first`.
-                The ordering of the dimensions in the inputs.
-                `channels_last` corresponds to inputs with shape
-                `(batch, height, width, channels)` while `channels_first`
-                corresponds to inputs with shape
-                `(batch, channels, height, width)`.
-                It defaults to the `image_data_format` value found in your
-                Keras config file at `~/.keras/keras.json`.
-                If you never set it, then it will be "channels_last".
-            dilation_rate: an integer or tuple/list of 2 integers, specifying
-                the dilation rate to use for dilated convolution.
-                Can be a single integer to specify the same value for
-                all spatial dimensions.
-                Currently, specifying any `dilation_rate` value != 1 is
-                incompatible with specifying any stride value != 1.
-            activation: Activation function to use.
-                If you don't specify anything, no activation is applied
-                (ie. "linear" activation: `a(x) = x`).
-            use_bias: Boolean, whether the layer uses a bias vector.
-            kernel_initializer: Initializer for the `kernel` weights matrix.
-            bias_initializer: Initializer for the bias vector.
-            kernel_regularizer: Regularizer function applied to
-                the `kernel` weights matrix (should be None and will be set).
-            bias_regularizer: Regularizer function applied to the bias vector.
-            activity_regularizer: Regularizer function applied to
-                the output of the layer (its "activation")..
-            kernel_constraint: Constraint function applied to the kernel matrix.
-            bias_constraint: Constraint function applied to the bias vector.
-            k_coef_lip: lipschitz constant to ensure.
-
-        This documentation reuse the body of the original keras.layers.Conv2D doc.
-        """
-        if padding != "circular":
-            raise RuntimeError(
-                "LorthRegulConv2D only support padding='circular' implemented in the "
-                "layer "
-            )
-        self.padding_size = [s // 2 for s in kernel_size]
-        self.actual_padding = padding  # since self.padding is updated by super class
-
-        self.lambdaLorth = lambdaLorth
-        if lambdaLorth < 0:
-            raise RuntimeError(
-                "LorthRegulConv2D requires a  positive regularization factor "
-                "lambdaLorth"
-            )
-        if lambdaLorth == 0:
-            warnings.warn("LorthRegularizer: No regularization with lambdaLorth==0")
-
-        internal_padding = "valid"
-        if kernel_regularizer is not None:
-            raise RuntimeError(
-                "LorthRegulConv2D define the kernel_regularizer (should be None)"
-            )
-        regulLipConv = None
-        if lambdaLorth > 0:
-            regulLipConv = LorthRegularizer(
-                kernel_shape=None,
-                stride=strides[0],
-                lambdaLorth=lambdaLorth,
-                flag_deconv=False,
-            )
-        super(LorthRegulConv2D, self).__init__(
-            filters=filters,
-            kernel_size=kernel_size,
-            strides=strides,
-            padding=internal_padding,  # internal value
-            data_format=data_format,
-            dilation_rate=dilation_rate,
-            activation=activation,
-            use_bias=use_bias,
-            kernel_initializer=kernel_initializer,
-            bias_initializer=bias_initializer,
-            kernel_regularizer=regulLipConv,  # internal value
-            bias_regularizer=bias_regularizer,
-            activity_regularizer=activity_regularizer,
-            kernel_constraint=kernel_constraint,
-            bias_constraint=bias_constraint,
-            **kwargs
-        )
-        self._kwargs = kwargs
-        self.set_klip_factor(k_coef_lip)
-        self.sig = None
-        self.u = None
-        self.niter_spectral = niter_spectral
-        self.spectral_input_shape = None
-        self.RO_case = True
-
-    def compute_padded_shape(self, input_shape):
-        if isinstance(input_shape, tf.TensorShape):
-            internal_input_shape = input_shape.as_list()
-        else:
-            internal_input_shape = list(input_shape)
-
-        if self.data_format == "channels_last":
-            first_layer = 1
-        else:
-            first_layer = 2
-        for index, pad in enumerate(self.padding_size):
-            internal_input_shape[index + first_layer] += 2 * pad
-        internal_input_shape = tf.TensorShape(internal_input_shape)
-        print(internal_input_shape)
-        return internal_input_shape
-
-    def set_spectral_input_shape(self):
-        (R0, R, C, M) = self.kernel.shape
-        self.cPad = [int(R0 / 2), int(R / 2)]
-        stride = self.strides[0]
-
-        # Compute minimal N
-        r = R // 2
-        if r < 1:
-            N = 5
-        else:
-            N = 4 * r + 1
-            if stride > 1:
-                N = int(0.5 + N / stride)
-
-        if C * stride ** 2 > M:
-            self.spectral_input_shape = (N, N, M)
-            self.RO_case = True
-        else:
-            self.spectral_input_shape = (stride * N, stride * N, C)
-            self.RO_case = False
-
-    def build(self, input_shape):
-        internal_input_shape = self.compute_padded_shape(input_shape)
-        super(LorthRegulConv2D, self).build(internal_input_shape)
-        self._init_lip_coef(input_shape)
-        if self.kernel_regularizer is not None:
-            self.kernel_regularizer.set_kernel_shape(self.kernel.shape)
-
-        self.set_spectral_input_shape()
-        self.u = self.add_weight(
-            shape=(1,) + self.spectral_input_shape,
-            initializer=RandomNormal(-1, 1),
-            name="sn",
-            trainable=False,
-            dtype=self.dtype,
-        )
-
-        self.sig = self.add_weight(
-            shape=tuple([1, 1]),  # maximum spectral  value
-            name="sigma",
-            trainable=False,
-            dtype=self.dtype,
-        )
-        self.sig.assign([[1.0]])
-
-        self.built = True
-
-    def compute_output_shape(self, input_shape):
-        internal_input_shape = self.compute_padded_shape(input_shape)
-        return super(LorthRegulConv2D, self).compute_output_shape(internal_input_shape)
-
-    def _compute_lip_coef(self, input_shape=None):
-        return 1.0  # this layer don't require a corrective factor
-
-    def call(self, x, training=None):
-        if training and self.niter_spectral > 0:
-            W_bar, _u, sigma = spectral_normalization_conv(
-                self.kernel,
-                self.u,
-                stride=self.strides[0],
-                conv_first=not self.RO_case,
-                cPad=self.cPad,
-                niter=self.niter_spectral,
-            )
-            self.sig.assign([[sigma]])
-            self.u.assign(_u)
-        else:
-            W_bar = self.kernel / self.sig
-
-        W_bar = self.kernel  # / self.sig
-        kernel = self.kernel
-        self.kernel = W_bar
-
-        x = padding_circular(x, self.padding_size)
-        outputs = super(LorthRegulConv2D, self).call(x)
-
-        self.kernel = kernel
-
-        return outputs
-
-    def get_config(self):
-        config = {
-            "k_coef_lip": self.k_coef_lip,
-            "niter_spectral": self.niter_spectral,
-            "lambdaLorth": self.lambdaLorth,
-            "padding": self.actual_padding,  # overwrite the internal padding
-            "kernel_regularizer": None,  # overwrite the kernel regul to None
-        }
-        base_config = super(LorthRegulConv2D, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    def condense(self):
-        new_w = self.kernel / self.sig.numpy()
-        self.kernel.assign(new_w)
-        self.sig.assign([[1.0]])
-        return
-
-    def vanilla_export(self):
-        self._kwargs["name"] = self.name
-        layer = LorthRegulConv2D(
-            filters=self.filters,
-            kernel_size=self.kernel_size,
-            strides=self.strides,
-            padding="circular",
-            data_format=self.data_format,
-            dilation_rate=self.dilation_rate,
-            activation=self.activation,
-            use_bias=self.use_bias,
-            kernel_initializer="glorot_uniform",
-            bias_initializer="zeros",
-            lambdaLorth=0.0,  # No regularization after export
-            **self._kwargs
-        )
-        layer.build(self.input_shape)
-        layer.kernel.assign(self.kernel.numpy() * self._get_coef())
-        if self.use_bias:
-            layer.bias.assign(self.bias.numpy())
-        return layer
-
-
 @register_keras_serializable("deel-lip", "FrobeniusDense")
-class FrobeniusDense(Dense, LipschitzLayer, Condensable):
+class FrobeniusDense(keraslayers.Dense, LipschitzLayer, Condensable):
     """
     Identical and faster than a SpectralDense in the case of a single output. In the
     multi-neurons setting, this layer can be used:
@@ -898,10 +614,7 @@ class FrobeniusDense(Dense, LipschitzLayer, Condensable):
         units,
         activation=None,
         use_bias=True,
-        kernel_initializer=SpectralInitializer(
-            niter_spectral=DEFAULT_NITER_SPECTRAL_INIT,
-            niter_bjorck=0,
-        ),
+        kernel_initializer=SpectralInitializer(),
         bias_initializer="zeros",
         kernel_regularizer=None,
         bias_regularizer=None,
@@ -975,7 +688,7 @@ class FrobeniusDense(Dense, LipschitzLayer, Condensable):
 
     def vanilla_export(self):
         self._kwargs["name"] = self.name
-        layer = Dense(
+        layer = keraslayers.Dense(
             units=self.units,
             activation=self.activation,
             use_bias=self.use_bias,
@@ -991,7 +704,7 @@ class FrobeniusDense(Dense, LipschitzLayer, Condensable):
 
 
 @register_keras_serializable("deel-lip", "FrobeniusConv2D")
-class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
+class FrobeniusConv2D(keraslayers.Conv2D, LipschitzLayer, Condensable):
     """
     Same as SpectralConv2D but in the case of a single output.
     """
@@ -1006,10 +719,7 @@ class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
         dilation_rate=(1, 1),
         activation=None,
         use_bias=True,
-        kernel_initializer=SpectralInitializer(
-            niter_spectral=DEFAULT_NITER_SPECTRAL_INIT,
-            niter_bjorck=0,
-        ),
+        kernel_initializer=SpectralInitializer(),
         bias_initializer="zeros",
         kernel_regularizer=None,
         bias_regularizer=None,
@@ -1096,7 +806,9 @@ class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
         return dict(list(base_config.items()) + list(config.items()))
 
     def condense(self):
-        wbar = self.kernel / tf.norm(self.kernel) * self._get_coef()
+        wbar = (
+            self.kernel / tf.norm(self.kernel, axis=self.axis_norm) * self._get_coef()
+        )
         self.kernel.assign(wbar)
 
     def vanilla_export(self):
@@ -1106,7 +818,7 @@ class FrobeniusConv2D(Conv2D, LipschitzLayer, Condensable):
 
 
 @register_keras_serializable("deel-lip", "ScaledAveragePooling2D")
-class ScaledAveragePooling2D(AveragePooling2D, LipschitzLayer):
+class ScaledAveragePooling2D(keraslayers.AveragePooling2D, LipschitzLayer):
     def __init__(
         self,
         pool_size=(2, 2),
@@ -1179,7 +891,7 @@ class ScaledAveragePooling2D(AveragePooling2D, LipschitzLayer):
         return np.sqrt(np.prod(np.asarray(self.pool_size)))
 
     def call(self, x, training=True):
-        return super(AveragePooling2D, self).call(x) * self._get_coef()
+        return super(keraslayers.AveragePooling2D, self).call(x) * self._get_coef()
 
     def get_config(self):
         config = {
@@ -1190,7 +902,7 @@ class ScaledAveragePooling2D(AveragePooling2D, LipschitzLayer):
 
 
 @register_keras_serializable("deel-lip", "ScaledL2NormPooling2D")
-class ScaledL2NormPooling2D(AveragePooling2D, LipschitzLayer):
+class ScaledL2NormPooling2D(keraslayers.AveragePooling2D, LipschitzLayer):
     def __init__(
         self,
         pool_size=(2, 2),
@@ -1299,7 +1011,7 @@ class ScaledL2NormPooling2D(AveragePooling2D, LipschitzLayer):
 
 
 @register_keras_serializable("deel-lip", "ScaledGlobalL2NormPooling2D")
-class ScaledGlobalL2NormPooling2D(GlobalAveragePooling2D, LipschitzLayer):
+class ScaledGlobalL2NormPooling2D(keraslayers.GlobalAveragePooling2D, LipschitzLayer):
     def __init__(self, data_format=None, k_coef_lip=1.0, eps_grad_sqrt=1e-6, **kwargs):
         """
         Average pooling operation for spatial data, with a lipschitz bound. This
@@ -1386,7 +1098,7 @@ class ScaledGlobalL2NormPooling2D(GlobalAveragePooling2D, LipschitzLayer):
 
 
 @register_keras_serializable("deel-lip", "ScaledGlobalAveragePooling2D")
-class ScaledGlobalAveragePooling2D(GlobalAveragePooling2D, LipschitzLayer):
+class ScaledGlobalAveragePooling2D(keraslayers.GlobalAveragePooling2D, LipschitzLayer):
     def __init__(self, data_format=None, k_coef_lip=1.0, **kwargs):
         """Global average pooling operation for spatial data with Lipschitz bound.
 
@@ -1446,7 +1158,7 @@ class ScaledGlobalAveragePooling2D(GlobalAveragePooling2D, LipschitzLayer):
 
 
 @register_keras_serializable("deel-lip", "InvertibleDownSampling")
-class InvertibleDownSampling(Layer):
+class InvertibleDownSampling(keraslayers.Layer):
     def __init__(
         self, pool_size, data_format="channels_last", name=None, dtype=None, **kwargs
     ):
@@ -1513,7 +1225,7 @@ class InvertibleDownSampling(Layer):
 
 
 @register_keras_serializable("deel-lip", "InvertibleUpSampling")
-class InvertibleUpSampling(Layer):
+class InvertibleUpSampling(keraslayers.Layer):
     def __init__(
         self, pool_size, data_format="channels_last", name=None, dtype=None, **kwargs
     ):

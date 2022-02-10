@@ -448,7 +448,7 @@ class LipschitzLayersTest(unittest.TestCase):
             [
                 dict(
                     layer_type=SpectralDense,
-                    layer_params={"units": 3, "use_bias": False, "niter_spectral": 5},
+                    layer_params={"units": 3, "use_bias": False},
                     batch_size=250,
                     steps_per_epoch=125,
                     epochs=5,
@@ -459,7 +459,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=SpectralDense,
-                    layer_params={"units": 4, "niter_spectral": 5},
+                    layer_params={"units": 4},
                     batch_size=250,
                     steps_per_epoch=125,
                     epochs=5,
@@ -470,7 +470,7 @@ class LipschitzLayersTest(unittest.TestCase):
                 ),
                 dict(
                     layer_type=SpectralDense,
-                    layer_params={"units": 4, "niter_spectral": 5},
+                    layer_params={"units": 4},
                     batch_size=250,
                     steps_per_epoch=125,
                     epochs=5,
