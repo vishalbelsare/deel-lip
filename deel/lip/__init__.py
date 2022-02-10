@@ -11,4 +11,5 @@ from . import losses
 from . import metrics
 from .model import Sequential, Model, vanillaModel
 from . import normalizers
+from . import retrocompatibility
 from . import utils
