@@ -76,7 +76,7 @@ def compute_layer_vs_2D(w, Ks, N, nbIter):
 
     # Minimum Singular Value
 
-    bigConstant = 1.1 * sigma_max ** 2
+    bigConstant = 1.1 * sigma_max**2
     print("bigConstant " + str(bigConstant))
     u = tf.random.uniform((batch_size,) + input_shape, minval=-1.0, maxval=1.0)
 

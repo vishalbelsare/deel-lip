@@ -44,9 +44,9 @@ class Lorth(ABC):
         delta = 0.0
         (R, C, M) = self.get_kernel_shape()
         if not self.flag_deconv:
-            delta = M - (self.stride ** self.dim) * C
+            delta = M - (self.stride**self.dim) * C
         else:
-            delta = C - (self.stride ** self.dim) * M
+            delta = C - (self.stride**self.dim) * M
         delta = max(0, delta)
         if delta > 0:
             print(
@@ -67,8 +67,8 @@ class Lorth(ABC):
         assert True, "check_if_orthconv_exists Not implemented"
         (R, C, M) = self.get_kernel_shape()
         # RO case
-        if C * self.stride ** self.dim >= M:
-            if M > C * (R ** self.dim):
+        if C * self.stride**self.dim >= M:
+            if M > C * (R**self.dim):
                 raise RuntimeError(
                     "Impossible RO configuration for orthogonal convolution"
                 )
@@ -78,7 +78,7 @@ class Lorth(ABC):
                     "Impossible CO configuration for orthogonal convolution"
                 )
 
-        if C * (self.stride ** self.dim) == M:
+        if C * (self.stride**self.dim) == M:
             warnings.warn(
                 "LorthRegularizer: Warning configuration C*S^2=M is hard to optimize"
             )
