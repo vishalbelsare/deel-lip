@@ -2,7 +2,12 @@
 # rights reserved. DEEL is a research program operated by IVADO, IRT Saint Exupéry,
 # CRIAQ and ANITI - https://www.deel.ai/
 # =====================================================================================
-from tensorflow.keras.initializers import Initializer, Orthogonal
+"""
+This module contains extra Keras initializers, e.g. SpectralInitializer for 1-Lipschitz
+matrix initialization.
+They can be used as kernel initializers in any Keras layer.
+"""
+from tensorflow.keras.initializers import Initializer
 from tensorflow.keras import initializers
 from .normalizers import (
     reshaped_kernel_orthogonalization,
@@ -21,18 +26,18 @@ class SpectralInitializer(Initializer):
         eps_bjorck=DEFAULT_EPS_BJORCK,
         beta_bjorck=DEFAULT_BETA_BJORCK,
         k_coef_lip=1.0,
-        base_initializer=Orthogonal(gain=1.0, seed=None),
+        base_initializer="orthogonal",
     ) -> None:
         """
         Initialize a kernel to be 1-lipschitz orthogonal using bjorck
         normalization.
 
         Args:
-            eps_spectral: stopping criterion of iterative power method
-            eps_bjorck: float greater than 0, stopping criterion of
+            eps_spectral (float): stopping criterion of iterative power method
+            eps_bjorck (float): float greater than 0, stopping criterion of
                 bjorck algorithm, setting it to None disable orthogonalization
-            beta_bjorck: beta parameter of bjorck algorithm
-            base_initializer: method used to generate weights before applying the
+            beta_bjorck (float): beta parameter of bjorck algorithm
+            base_initializer (str): method used to generate weights before applying the
                 orthonormalization
         """
         self.eps_spectral = eps_spectral
@@ -44,7 +49,7 @@ class SpectralInitializer(Initializer):
 
     def __call__(self, shape, dtype=None, partition_info=None):
         w = self.base_initializer(shape=shape, dtype=dtype)
-        wbar, u, sigma = reshaped_kernel_orthogonalization(
+        wbar, _, _ = reshaped_kernel_orthogonalization(
             w,
             None,
             self.k_coef_lip,

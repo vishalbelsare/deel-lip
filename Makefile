@@ -9,9 +9,9 @@ help:
 	@echo "make test-disable-gpu"
 	@echo "       run test with gpu disabled"
 	@echo "make doc"
-	@echo "       build Sphinx docs documentation"
-	@echo "ipynb-to-rst"
-	@echo "       Transform notebooks to .rst files in documentation and generate the doc"
+	@echo "       build Mkdocs documentation"
+	@echo "make serve-doc"
+	@echo "       run documentation server for development"
 
 prepare-dev:
 	python3 -m pip install virtualenv
@@ -22,13 +22,19 @@ prepare-dev:
 	. deel_lip_dev_env/bin/activate && pip install -e .[docs]
 
 test:
-	. deel_lip_dev_env/bin/activate && tox
+	. deel_lip_dev_env/bin/activate && tox -e py37-tf23
+	. deel_lip_dev_env/bin/activate && tox -e py39-tf27
+	. deel_lip_dev_env/bin/activate && tox -e py310-tflatest
+	. deel_lip_dev_env/bin/activate && tox -e py310-lint
 
 test-disable-gpu:
-	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 tox
+	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 tox -e py37-tf23
+	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 tox -e py39-tf27
+	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 tox -e py310-tflatest
+	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 tox -e py310-lint
 
 doc:
-	. deel_lip_dev_env/bin/activate && cd doc && make html && cd -
+	. deel_lip_dev_env/bin/activate && mkdocs build
 
-ipynb-to-rst:
-	. deel_lip_dev_env/bin/activate && cd doc && ./generate_doc.sh && cd -
+serve-doc:
+	. deel_lip_dev_env/bin/activate && CUDA_VISIBLE_DEVICES=-1 mkdocs serve

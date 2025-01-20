@@ -29,14 +29,14 @@ def evaluate_lip_const_gen(
     Args:
         model: built keras model used to make predictions
         generator: used to select datapoints where to compute the lipschitz constant
-        eps: magnitude of noise to add to input in order to compute the constant
-        seed: seed used when generating the noise ( can be set to None )
+        eps (float): magnitude of noise to add to input in order to compute the constant
+        seed (int): seed used when generating the noise ( can be set to None )
 
     Returns:
-        the empirically evaluated lipschitz constant.
+        float: the empirically evaluated lipschitz constant.
 
     """
-    x, y = generator.send(None)
+    x, _ = generator.send(None)
     return evaluate_lip_const(model, x, eps, seed=seed)
 
 
@@ -49,12 +49,12 @@ def evaluate_lip_const(model: Model, x, eps=1e-4, seed=None):
     Args:
         model: built keras model used to make predictions
         x: inputs used to compute the lipschitz constant
-        eps: magnitude of noise to add to input in order to compute the constant
-        seed: seed used when generating the noise ( can be set to None )
+        eps (float): magnitude of noise to add to input in order to compute the constant
+        seed (int): seed used when generating the noise ( can be set to None )
 
     Returns:
-        the empirically evaluated lipschitz constant. The computation might also be
-        inaccurate in high dimensional space.
+        float: the empirically evaluated lipschitz constant. The computation might also
+            be inaccurate in high dimensional space.
 
     """
     y_pred = model.predict(x)
@@ -69,7 +69,7 @@ def evaluate_lip_const(model: Model, x, eps=1e-4, seed=None):
     ndx = K.sqrt(K.sum(K.square(dx), axis=range(1, len(x.shape))))
     ndfx = K.sqrt(K.sum(K.square(dfx), axis=range(1, len(y_pred.shape))))
     lip_cst = K.max(ndfx / ndx)
-    print("lip cst: %.3f" % lip_cst)
+    print(f"lip cst: {lip_cst:.3f}")
     return lip_cst
 
 
@@ -129,9 +129,10 @@ def process_labels_for_multi_gpu(labels):
     [batch_size, number of classes].
 
     Args:
-        labels: tf.Tensor containing the labels
+        labels (tf.Tensor): tensor containing the labels
+
     Returns:
-        labels processed for KR-based losses with multi-GPU/TPU strategy.
+        tf.Tensor: labels processed for KR-based losses with multi-GPU/TPU strategy.
     """
     eps = 1e-7
     labels = tf.cast(tf.where(labels > 0, 1, 0), labels.dtype)

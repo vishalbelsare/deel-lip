@@ -28,12 +28,12 @@ def _is_supported_1lip_layer(layer):
     if isinstance(layer, supported_1lip_layers):
         return True
     elif isinstance(layer, kl.MaxPool2D):
-        return True if layer.pool_size <= layer.strides else False
+        return layer.pool_size <= layer.strides
     elif isinstance(layer, kl.ReLU):
-        return True if (layer.threshold == 0 and layer.negative_slope <= 1) else False
+        return bool(layer.threshold == 0 and layer.negative_slope <= 1)
     elif isinstance(layer, kl.Activation):
         supported_activations = (ka.linear, ka.relu, ka.sigmoid, ka.tanh)
-        return True if layer.activation in supported_activations else False
+        return layer.activation in supported_activations
     return False
 
 
@@ -53,9 +53,10 @@ class Sequential(KerasSequential, LipschitzLayer, Condensable):
         But in the future other repartition function may be implemented.
 
         Args:
-            layers: list of layers to add to the model.
-            name: name of the model, can be None
-            k_coef_lip: the Lipschitz coefficient to ensure globally on the model.
+            layers (list): list of layers to add to the model.
+            name (str): name of the model, can be None
+            k_coef_lip (float): the Lipschitz coefficient to ensure globally on the
+                model.
         """
         super(Sequential, self).__init__(layers, name)
         self.set_klip_factor(k_coef_lip)
@@ -123,6 +124,10 @@ class Model(KerasModel):
     """
 
     def condense(self):
+        """
+        The condense operation allows to overwrite the kernel with constrained kernel
+        and ensure that other variables are still consistent.
+        """
         for layer in self.layers:
             if isinstance(layer, Condensable):
                 layer.condense()
@@ -134,8 +139,8 @@ class Model(KerasModel):
 
         Returns:
             A Keras model, identical to this model, but where condensable layers have
-            been replaced with their vanilla equivalent (e.g. SpectralConv2D with
-            Conv2D).
+                been replaced with their vanilla equivalent (e.g. SpectralConv2D with
+                Conv2D).
         """
         return vanillaModel(self)
 
@@ -153,7 +158,7 @@ def vanillaModel(model):
 
     Returns:
         A Keras model, identical to the input model where `Condensable` layers are
-        replaced with their vanilla counterparts.
+            replaced with their vanilla counterparts.
     """
 
     def _replace_condensable_layer(layer):
